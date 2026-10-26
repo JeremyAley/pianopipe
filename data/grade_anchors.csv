@@ -1,0 +1,52 @@
+# Grade anchors: catalog pieces with a documented exam grade or level (docs/learning-mode.md 1.4 and 1.5).
+# Read by pianopipe/grading.py (lines starting with # are comments). Evidence for our own grading only.
+#
+# grade: our 0-10 scale (0 Initial, 1-8 grades, 9-10 diploma). Rule: the mean of the ABRSM and Trinity grades when
+# either exists (they number grades like we do); otherwise the RCM level through our concordance
+#   RCM L1->1, L2->1.5, L3->2, L4->3, L5->4, L6->4.5, L7->5, L8->6, L9->7, L10->8
+# (our synthesis from pieces listed by both RCM and ABRSM/Trinity; not an official equivalence).
+# Henle levels (1-9) are recorded as evidence only: they run low and broad, so they don't set the grade.
+# The grade applies to the full arrangement (the last level) of the catalog piece; reduced levels are estimated.
+#
+# sources (short keys):
+#   A25 = ABRSM Piano Practical Grades 2025 & 2026 syllabus
+#         https://www.abrsm.org/sites/default/files/2024-06/Piano%202025%20&%202026%20Prac%20syllabus%2020240524_access.pdf
+#   A27 = ABRSM Piano Practical Grades 2027 & 2028 qualification specification
+#         https://www.abrsm.org/sites/default/files/2026-06/Piano%20Practical%20Grades%20Qualification%20Specification%202027%20&%202028.pdf
+#   T   = Trinity College London piano repertoire list (Aug 2026) https://www.trinitycollege.com/resource/?id=10125
+#   R   = RCM Piano Syllabus 2022 https://teacherportal.rcmusic.com/getattachment/57f3734d-97e5-4777-b67e-4b1111ee31a3/piano-syllabus-2022-edition.pdf
+#   H   = G. Henle Verlag levels of difficulty https://www.henle.de/Levels-of-Difficulty/ and per-edition pages, e.g.
+#         https://www.henle.de/en/Bagatelle-in-a-minor-WoO-59-Fuer-Elise/HN-1347
+#         https://www.henle.de/Album-for-the-Young-op.-68/HN-45
+#         https://www.henle.de/en/25-Etudes-op.-100/HN-1726
+#
+# Terms: ABRSM states its syllabus lists are its copyright. We cite individual facts as evidence for our own grading,
+# never reproduce a list, and never show board names in the app (docs/learning-mode.md 1.5). Henle levels: a handful
+# cited per piece with links, not copied wholesale.
+id,title,grade,abrsm,trinity,rcm,henle,sources,notes
+petzold-minuet-in-g-major-bwv-anh-114,"Minuet in G major, BWV Anh. 114",2,,,3,1,R H,
+petzold-minuet-in-g-minor-bwv-anh-115,"Minuet in G minor, BWV Anh. 115",2,,,3,1,R H,
+anon-minuet-in-f-major-bwv-anh-113,"Minuet in F major, BWV Anh. 113",3,,,4,2,R H,
+anon-minuet-in-g-major-bwv-anh-116,"Minuet in G major, BWV Anh. 116",3,,,4,2,R H,
+schumann-op68-2-soldiers-march,"Soldiers' March, Op. 68 No. 2",1.5,,,2,2,R H,
+schumann-op68-8-the-wild-horseman,"The Wild Horseman, Op. 68 No. 8",3,3,,,3,A25 A27 H,ABRSM grade 3 on both lists
+schumann-op68-10-the-happy-farmer,"The Happy Farmer, Op. 68 No. 10",3,,,4,3,R H,
+burgmuller-arabesque,"L'Arabesque, Op. 100 No. 2",2,,,3,1,R H,
+burgmuller-ballade,"Ballade, Op. 100 No. 15",4,4,,4,2,A25 R H,
+clementi-opus36-1-1,"Sonatina Op. 36 No. 1, 1st movement",2,,,3,3,R H,
+grieg-album-leaf-op12-7,"Album Leaf in E minor, Op. 12 No. 7",5,,,7,3,R H,
+elise,Für Elise,5,,,7,3,R H,
+beethoven-sonata-op49-1-1,"Sonata Op. 49 No. 1, 1st movement",6,,,8,3,R H,
+beethoven-sonata-op49-2-1,"Sonata Op. 49 No. 2, 1st movement",6,,,8,3,R H,
+mz-545-1,"Sonata K. 545, 1st movement",6,6,,8,5,A27 R H,
+bach-prelude-in-c-major-bwv-846,"Prelude in C major, BWV 846",5,,5,,,T,prelude only (the catalog file has no fugue)
+bach-invention-1-bwv-772,"Invention 1, BWV 772",5,,,7,3,R H,
+scn15-1,"Of Foreign Lands and Peoples, Op. 15 No. 1",5,5,,,4,A25 A27 H,ABRSM grade 5 on both lists
+chpn-p4,"Prelude in E minor, Op. 28 No. 4",5,,,7,4,R H,
+chopin-prelude-op28-6,"Prelude in B minor, Op. 28 No. 6",6,,,8,4,R H,
+chopin-nocturne-op72-1,"Nocturne in E minor, Op. 72 No. 1",8,8,,10,5,A27 R H,
+debussy-cc-5,The Little Shepherd,7,7,,8,4,A25 A27 R H,ABRSM grade 7 on both lists
+deb-clai,Clair de lune,8,,8,10,5,T R H,
+mz-331-3,"Rondo alla Turca, K. 331",8,8,,,,A25,
+pathetique-2,"Pathétique Sonata, Op. 13, 2nd movement",8,8,,,,A25 A27,ABRSM grade 8 on both lists
+schumm-3,"Moment musical No. 3, D. 780",6,6,,,,A25 A27,ABRSM grade 6 on both lists
