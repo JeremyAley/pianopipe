@@ -58,6 +58,20 @@ def test_model_clamps_and_round_trips(tmp_path):
     assert grading.GradeModel.load(tmp_path / "m.json") == m
 
 
+def test_length_stops_counting_at_the_cap():
+    m = grading.GradeModel(["log_notes"], [6.0], [1.0], [1.0], 5.0, 1.0, caps={"log_notes": 7.0})
+    assert m.predict({"log_notes": 7.0}) == m.predict({"log_notes": 9.0}) == 6.0
+    model = grading.default_model()
+    assert model.caps.get("log_notes") == pytest.approx(grading.CAPS["log_notes"])
+
+
+def test_features_are_clipped_to_the_anchors_range():
+    rows = [{"a": float(x)} for x in range(5)]
+    m = grading.ridge_fit(rows, [float(x) for x in range(5)], ["a"], 0.0)
+    assert m.ranges == {"a": [0.0, 4.0]}
+    assert m.predict({"a": 40.0}) == m.predict({"a": 4.0}) == 4.0
+
+
 # ---- anchors and the checked-in model ----
 
 def test_anchor_rule():

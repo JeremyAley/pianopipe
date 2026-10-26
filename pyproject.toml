@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pianopipe"
-version = "0.1.0"
+version = "0.2.0"
 description = "Piano MIDI in; difficulty levels, fingering, grades and catalog.json out (for Quest Piano Trainer)"
 readme = "README.md"
 license = "Apache-2.0"
@@ -24,6 +24,9 @@ pianopipe = "pianopipe.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+pianopipe = ["grade_model.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

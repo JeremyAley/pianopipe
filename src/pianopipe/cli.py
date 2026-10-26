@@ -143,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("eval-fingering", help="score automatic fingering against hand-written textbook fingerings")
     p.set_defaults(func=_eval_fingering)
 
-    p = sub.add_parser("grade-fit", help="calibrate grades on the anchor pieces; writes data/grade_model.json and grade_fit.md")
+    p = sub.add_parser("grade-fit", help="calibrate grades on the anchor pieces; writes pianopipe/grade_model.json and data/grade_fit.md")
     p.add_argument("raw", help="folder the manifest's file paths are relative to (data/raw)")
     p.add_argument("--sources", default=str(grading.DATA.parents[1] / "data" / "catalog" / "sources.json"))
     p.add_argument("--anchors", default=str(grading.ANCHORS_CSV))

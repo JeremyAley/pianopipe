@@ -8,13 +8,14 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import features, grading, midi_io
+from . import features, grading, leadsheet, midi_io, musicxml
 from .catalog import CHARACTERS, Catalog, Level, SongEntry, sha256_file
 from .difficulty import LEVELS, difficulty_score, make_levels
 from .fingering import assign_fingering
 from .hands import split_hands
 from .model import Song
 from .quality import GatePolicy, QualityError, check
+from .satb import reach
 from .tracks import pick_piano
 
 MAX_WARNINGS = 20
@@ -43,15 +44,30 @@ def grade(difficulty: float) -> str:
     return next(name for limit, name in GRADES if difficulty <= limit)
 
 
-def load_notes(src: str | Path):
-    """Read a MIDI file's piano part with hands: (song, notes, hand_source, seconds(tick))."""
-    song = midi_io.load(src)
-    part = pick_piano(song)
-    notes = part.notes
-    hand_source = part.hand_source
+def load_notes(src: str | Path, satb: bool = False):
+    """Read a MIDI or MusicXML file's piano part with hands: (song, notes, hand_source, seconds(tick)).
+
+    MusicXML hands come from the staves (musicxml.py); MIDI hands from track names, tracks or channels (tracks.py);
+    an ABC lead sheet (a house arrangement) has the melody in the right hand and a generated left hand (leadsheet.py).
+    With `satb` (a four-part hymn or chorale on two staves), or when the file's parts are a choir, the SATB rule's
+    reach step moves the tenor to the right hand where the left hand would stretch past an octave."""
+    suffix = Path(src).suffix.lower()
+    if suffix in musicxml.SUFFIXES:
+        score = musicxml.load(src)
+        song, notes, hand_source = score.song, score.notes, score.hand_source
+    elif suffix in leadsheet.SUFFIXES:
+        song, _ = leadsheet.load(src)
+        notes, hand_source = song.notes, "leadsheet"
+    else:
+        song = midi_io.load(src)
+        part = pick_piano(song)
+        notes, hand_source = part.notes, part.hand_source
     if hand_source == "none":
         notes = split_hands(notes, song.ticks_per_beat)
         hand_source = "auto"
+    elif satb or hand_source == "satb":
+        notes = reach(notes, song.ticks_per_beat)
+        hand_source = "satb"
 
     def seconds(tick: int) -> float:
         return seconds_at(song, tick)
@@ -74,19 +90,19 @@ def process_file(
 ) -> SongEntry:
     """Process one MIDI file into out_dir/<id>/level<N>.mid and return its catalog entry.
 
-    `meta` may hold id, title, full_title, composer, license, attribution, source_url, era, tags and character (which
-    overrides the computed one).
+    `meta` may hold id, title, full_title, composer, license, attribution, source_url, era, tags, character (which
+    overrides the computed one) and satb (true for a four-part hymn setting: see load_notes).
     `base_url` is prepended to level file paths in the entry (relative to catalog.json).
     With a `policy`, the quality gate runs before anything is written and a failing song raises QualityError;
     without one, only its warnings are kept. With `fingering`, every level's notes get fingers (fingering.py).
-    Every level gets a `grade` estimated by `grade_model` (default: data/grade_model.json; None for no grades),
+    Every level gets a `grade` estimated by `grade_model` (default: the packaged grade_model.json; None for no grades),
     except the full level of a piece in `anchors` (default: data/grade_anchors.csv), which gets its reference grade;
     a level is never graded above the next one.
     """
     src = Path(src)
     meta = dict(meta or {})
     song_id = meta.pop("id", None) or slugify(src.stem)
-    song, notes, hand_source, seconds = load_notes(src)
+    song, notes, hand_source, seconds = load_notes(src, satb=bool(meta.pop("satb", False)))
     if not notes:
         raise QualityError(["no playable notes"])
     if grade_model is _DEFAULT:
@@ -174,7 +190,7 @@ def build_catalog(
     policy: GatePolicy | None = None,
     easiest_first: bool = False,
 ) -> BuildResult:
-    """Process MIDI files into out_dir/songs/<id>/ with out_dir/catalog.json and out_dir/build-report.json.
+    """Process MIDI and MusicXML files into out_dir/songs/<id>/ with out_dir/catalog.json and out_dir/build-report.json.
 
     `sources` is either a dict mapping file names in src_dir to their metadata (every .mid/.midi in src_dir is
     built), or a manifest list of entries whose "file" is a path relative to src_dir (only those are built, in
@@ -187,7 +203,7 @@ def build_catalog(
     if isinstance(sources, list):
         jobs = [(src_dir / e["file"], e) for e in sources]
     else:
-        files = sorted(p for p in src_dir.iterdir() if p.suffix.lower() in (".mid", ".midi"))
+        files = sorted(p for p in src_dir.iterdir() if p.suffix.lower() in (".mid", ".midi") + musicxml.SUFFIXES + leadsheet.SUFFIXES)
         jobs = [(p, (sources or {}).get(p.name)) for p in files]
     policy = policy or GatePolicy()
     result = BuildResult(Catalog(name=name))

@@ -33,7 +33,7 @@ def load(path: str | Path) -> Song:
             tick += msg.time
             if msg.is_meta:
                 if msg.type == "track_name" and not info.name:
-                    info.name = msg.name.strip()
+                    info.name = msg.name.replace("\x00", "").strip()  # MuseScore pads names with NUL
                 elif msg.type in _TIMING_META:
                     song.meta.append((tick, msg.copy(time=0)))
                 elif msg.type == "text":

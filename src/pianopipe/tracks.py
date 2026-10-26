@@ -11,16 +11,27 @@ from .model import Note, Song
 DRUM_CHANNEL = 9  # channel 10 in 1-based numbering
 PIANO_PROGRAMS = range(0, 8)  # GM programs 1-8 (0-based 0-7)
 
-_RIGHT = re.compile(r"\b(rh|right|r\.?h\.?|treble|upper|oben|droite)\b|right hand|\bmelody\b", re.I)
-_LEFT = re.compile(r"\b(lh|left|l\.?h\.?|bass|lower|unten|gauche)\b|left hand", re.I)
+# LilyPond exports name one track per voice after its staff: "up", "upII", "upA:", "down", "downIII:".
+_RIGHT = re.compile(r"\b(rh|right|r\.?h\.?|treble|upper|oben|droite)\b|right hand|\bmelody\b|^\s*up(I+|[A-D])?\s*:?\s*$", re.I)
+_LEFT = re.compile(r"\b(lh|left|l\.?h\.?|bass|lower|unten|gauche)\b|left hand|^\s*down(I+|[A-D])?\s*:?\s*$", re.I)
 _PIANO = re.compile(r"piano|klavier|keys|pno", re.I)
+
+
+_CHOIR = (
+    ("R", re.compile(r"^\s*(s|sop|soprano|sopran|treble|a|alt|alto|contralto)\.?\s*\d*\s*$", re.I)),
+    ("L", re.compile(r"^\s*(t|ten|tenor|tenore|b|bass|basso|bassi|baritone)\.?\s*\d*\s*$", re.I)),
+)
 
 
 @dataclass
 class PianoPart:
     notes: list[Note]
-    # How hands were decided: "track_names", "two_tracks", "two_channels" or "none".
+    # How hands were decided: "track_names", "two_tracks", "two_channels", "satb" or "none".
     hand_source: str
+
+
+def _choir_hand(name: str) -> str | None:
+    return next((hand for hand, rx in _CHOIR if rx.match(name)), None)
 
 
 def _hand_from_name(name: str) -> str | None:
@@ -34,6 +45,11 @@ def _hand_from_name(name: str) -> str | None:
 
 def pick_piano(song: Song) -> PianoPart:
     """Return the piano notes, with hands set when the file's structure gives them."""
+    voiced = [(t, _choir_hand(t.name)) for t in song.tracks if t.notes]
+    if len(voiced) >= 3 and all(h for _, h in voiced) and {"R", "L"} == {h for _, h in voiced}:
+        # A four-part choir setting, one track per voice: soprano and alto right, tenor and bass left.
+        out = [n.with_hand(h) for t, h in voiced for n in t.notes if n.channel != DRUM_CHANNEL]
+        return PianoPart(sorted(out, key=lambda n: (n.start, n.pitch)), "satb")
     tracks = []
     for t in song.tracks:
         notes = [n for n in t.notes if n.channel != DRUM_CHANNEL]

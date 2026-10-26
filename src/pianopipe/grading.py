@@ -2,7 +2,7 @@
 
 data/grade_anchors.csv holds the anchors. `pianopipe grade-fit` measures how well the full level's `difficulty`
 alone predicts their grades (step 1: isotonic regression), then fits a small ridge model on cheap features
-(step 2, features.py), and writes data/grade_model.json and data/grade_fit.md. Catalog builds only apply the
+(step 2, features.py), and writes the package's grade_model.json and data/grade_fit.md. Catalog builds only apply the
 stored model, so they stay deterministic. Pure Python (no numpy): 26 anchors and a handful of features.
 """
 
@@ -19,13 +19,22 @@ from .features import FEATURES
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 ANCHORS_CSV = DATA / "grade_anchors.csv"
-MODEL_JSON = DATA / "grade_model.json"
+MODEL_JSON = Path(__file__).with_name("grade_model.json")  # inside the package, so an installed pianopipe has it
 REPORT_MD = DATA / "grade_fit.md"
 RCM_TO_GRADE = {1: 1, 2: 1.5, 3: 2, 4: 3, 5: 4, 6: 4.5, 7: 5, 8: 6, 9: 7, 10: 8}
 RIDGE_GRID = (0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0)
 MAX_FEATURES = 4
 MIN_GAIN = 0.03  # LOO MAE (grades) a feature must save to be added
 MISPLACED = 1.5  # |predicted - reference| that counts as misplaced
+# Length stops counting past 1,500 notes, and every feature is clipped to the anchors' range (GradeModel.ranges).
+# Without them, pieces longer or more chromatic than every anchor (Schubert's impromptus, the Ballade) were
+# extrapolated to 10, melody level included. Together they cost 0.07 grades of LOO MAE (0.59 -> 0.66; nested 0.65 -> 0.73); see
+# data/grade_fit.md, Limitations, for the alternatives tried.
+CAPS = {"log_notes": math.log(1500)}
+
+
+def capped(feats: dict[str, float], caps: dict[str, float] = CAPS) -> dict[str, float]:
+    return {k: min(v, caps[k]) if k in caps else v for k, v in feats.items()}
 
 
 # ---- anchors ----
@@ -153,8 +162,12 @@ class GradeModel:
     intercept: float
     ridge: float
     fit: dict = field(default_factory=dict)  # summary of the fit report, for the build's printout
+    caps: dict = field(default_factory=dict)  # feature -> largest value that counts (see CAPS)
+    ranges: dict = field(default_factory=dict)  # feature -> [min, max] seen in the anchors; values are clipped to it
 
     def raw(self, feats: dict[str, float]) -> float:
+        feats = capped(feats, self.caps)
+        feats = {k: min(max(v, self.ranges[k][0]), self.ranges[k][1]) if k in self.ranges else v for k, v in feats.items()}
         return self.intercept + sum(
             c * (feats[f] - m) / s for f, m, s, c in zip(self.features, self.mean, self.std, self.coef)
         )
@@ -180,7 +193,10 @@ def ridge_fit(rows: list[dict[str, float]], ys: list[float], names: list[str], l
     a = [[sum(row[i] * row[j] for row in x) + (lam if i == j else 0.0) for j in range(len(names))] for i in range(len(names))]
     b = [sum(row[i] * (y - my) for row, y in zip(x, ys)) for i in range(len(names))]
     coef = _solve(a, b) if names else []
-    return GradeModel(list(names), mean, std, coef, my, lam)
+    # A piece outside the anchors' range on some feature is graded as if at the edge of that range: the anchors say
+    # nothing about what lies beyond, and extrapolating gave long or very chromatic pieces 10s.
+    ranges = {f: [min(r[f] for r in rows), max(r[f] for r in rows)] for f in names}
+    return GradeModel(list(names), mean, std, coef, my, lam, ranges=ranges)
 
 
 def _loo_ridge(rows, ys, names, lam) -> list[float]:
@@ -252,8 +268,10 @@ def _misplaced(ids, titles, grades, preds) -> list[dict]:
 
 
 def fit(ids: list[str], titles: list[str], grades: list[float], rows: list[dict[str, float]]) -> FitResult:
-    """Step 1 (isotonic difficulty -> grade) and step 2 (ridge on selected features), both scored leave-one-out."""
+    """Step 1 (isotonic difficulty -> grade) and step 2 (ridge on selected features), both scored leave-one-out.
+    Features are capped (CAPS) before step 2, and the model applies the same caps."""
     n = len(ids)
+    rows = [capped(r) for r in rows]
     diff = [r["difficulty"] for r in rows]
     iso_loo = [
         isotonic_predict(isotonic_fit(diff[:i] + diff[i + 1:], grades[:i] + grades[i + 1:]), diff[i]) for i in range(n)
@@ -277,7 +295,8 @@ def fit(ids: list[str], titles: list[str], grades: list[float], rows: list[dict[
         f, l, _ = select_features(r, g)
         nested.append(_clamp(ridge_fit(r, g, f, l).raw(rows[i])))
     model = ridge_fit(rows, grades, names, lam)
-    single = {f: round(spearman([r[f] for r in rows], grades), 3) for f in FEATURES}
+    model.caps = {k: v for k, v in CAPS.items() if k in names}
+    single ={f: round(spearman([r[f] for r in rows], grades), 3) for f in FEATURES}
     step2 = {
         "features": names,
         "ridge": lam,
@@ -369,7 +388,7 @@ def report(res: FitResult, missing: list[str] = (), rcm_only: int | None = None)
         f"MAE {s2['nested_loo_mae']} grades. This is the honest number.",
         f"- Misplaced (LOO): {len(s2['misplaced'])} of {len(res.ids)}",
         "",
-        "Model (data/grade_model.json): grade = intercept + sum(coef * (feature - mean) / std), clamped to 0-10.",
+        "Model (pianopipe/grade_model.json): grade = intercept + sum(coef * (feature - mean) / std), clamped to 0-10.",
         "",
         "| Feature | Mean | Std | Coef (grades per std) |",
         "| --- | --- | --- | --- |",
@@ -403,6 +422,14 @@ def report(res: FitResult, missing: list[str] = (), rcm_only: int | None = None)
         "are invisible here (pedal could be added once CC64 is loaded).",
         "- Length (`log_notes`) carries much of the fit: longer pieces sit higher on exam lists. It counts notes as the "
         "file has them, so a file with written-out repeats rates longer than one without.",
+        "- Length stops counting at 1,500 notes and every feature is clipped to the anchors' range, so nothing is "
+        "extrapolated: before, pieces longer or more chromatic than every anchor got 10 (Schubert's impromptus, even "
+        "at melody level). Leave-one-out MAE / nested MAE of the options tried: uncapped 0.59 / 0.65; cap 1,500 alone "
+        "0.64 / 0.68; cap 2,500 alone 0.59 / 0.60 (but Schubert stays at 9.3-10); clipping alone 0.63 / 0.68; "
+        "clipping + cap 1,500 (chosen) 0.66 / 0.73. Density per minute instead of length (nested 1.18) and a "
+        "per-window key measure (LOO 0.76) lost too much. The cost of the chosen option: long virtuoso pieces read "
+        "low (La Campanella 6.7, Moonlight 3rd movement 7.2), because nothing here sees speed and no anchor is above "
+        "grade 8. More anchors (PSyllabus, below) are the real fix.",
         "- The grades are for the full arrangement. Reduced levels get the same model's estimate from their own notes, "
         "which the anchors don't test.",
         "- Next step: PSyllabus (CC BY 4.0, 7,901 pieces with levels from ABRSM, RCM, Trinity and others, "
@@ -437,7 +464,7 @@ _DEFAULTS: dict = {}
 
 
 def default_model() -> GradeModel | None:
-    """The checked-in model, or None when the data folder isn't there (e.g. an installed package)."""
+    """The model shipped in the package (grade_model.json beside this file), or None if it's missing."""
     if "model" not in _DEFAULTS:
         _DEFAULTS["model"] = GradeModel.load() if MODEL_JSON.exists() else None
     return _DEFAULTS["model"]

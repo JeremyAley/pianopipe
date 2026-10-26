@@ -42,7 +42,7 @@ class SongEntry:
     license: str = ""
     attribution: str = ""
     source_url: str = ""
-    hand_source: str = ""  # how hands were decided: track_names, two_tracks, two_channels, auto
+    hand_source: str = ""  # how hands were decided: track_names, two_tracks, two_channels, staves, satb, leadsheet, auto
     duration_s: float = 0.0
     warnings: list[str] = field(default_factory=list)
     levels: list[Level] = field(default_factory=list)

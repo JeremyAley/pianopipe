@@ -40,7 +40,7 @@ Each feature's own Spearman with the grade:
 | Feature | Spearman |
 | --- | --- |
 | `outside_key` | 0.772 |
-| `log_notes` | 0.753 |
+| `log_notes` | 0.75 |
 | `pitch_range` | 0.676 |
 | `polyphony` | 0.59 |
 | `span` | 0.508 |
@@ -52,56 +52,57 @@ Each feature's own Spearman with the grade:
 
 Forward selection by LOO MAE (a feature must save 0.03 grades, at most 4), ridge strength from [0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0] by LOO, on standardised features. A feature set where any coefficient comes out negative is skipped: every feature measures something that makes a piece harder.
 
-- Chosen: `log_notes`, `polyphony`, `outside_key`, `independence`; ridge strength 3.0
-- LOO Spearman: 0.922, LOO MAE: 0.59 grades (features chosen on all 26, so slightly optimistic)
-- Nested LOO (selection redone without the held-out piece): Spearman 0.92, MAE 0.65 grades. This is the honest number.
-- Misplaced (LOO): 2 of 26
+- Chosen: `log_notes`, `polyphony`, `outside_key`, `independence`; ridge strength 0.03
+- LOO Spearman: 0.875, LOO MAE: 0.66 grades (features chosen on all 26, so slightly optimistic)
+- Nested LOO (selection redone without the held-out piece): Spearman 0.864, MAE 0.73 grades. This is the honest number.
+- Misplaced (LOO): 3 of 26
 
-Model (data/grade_model.json): grade = intercept + sum(coef * (feature - mean) / std), clamped to 0-10.
+Model (pianopipe/grade_model.json): grade = intercept + sum(coef * (feature - mean) / std), clamped to 0-10.
 
 | Feature | Mean | Std | Coef (grades per std) |
 | --- | --- | --- | --- |
-| `log_notes` | 6.443 | 0.751 | +1.02 |
-| `polyphony` | 0.070 | 0.108 | +0.55 |
-| `outside_key` | 0.092 | 0.059 | +0.82 |
-| `independence` | 0.424 | 0.188 | +0.31 |
+| `log_notes` | 6.389 | 0.662 | +1.09 |
+| `polyphony` | 0.070 | 0.108 | +0.52 |
+| `outside_key` | 0.092 | 0.059 | +0.85 |
+| `independence` | 0.424 | 0.188 | +0.34 |
 | intercept | | | 4.79 |
 
 | Piece | Reference | Predicted |
 | --- | --- | --- |
-| Sonatina Op. 36 No. 1, 1st movement | 2 | 3.7 |
-| Rondo alla Turca, K. 331 | 8 | 6.4 |
+| Rondo alla Turca, K. 331 | 8 | 5.8 |
+| Sonatina Op. 36 No. 1, 1st movement | 2 | 3.8 |
+| The Little Shepherd | 7 | 5.3 |
 
 ## Per piece
 
 | Piece | Reference | difficulty | Step 1 (LOO) | Step 2 (LOO) |
 | --- | --- | --- | --- | --- |
-| Soldiers' March, Op. 68 No. 2 | 1.5 | 4.1 | 4.0 | 1.7 |
-| L'Arabesque, Op. 100 No. 2 | 2 | 6.1 | 5.9 | 2.7 |
-| Sonatina Op. 36 No. 1, 1st movement | 2 | 4.5 | 4.4 | 3.7 |
-| Minuet in G major, BWV Anh. 114 | 2 | 3.1 | 3.8 | 2.3 |
-| Minuet in G minor, BWV Anh. 115 | 2 | 3.1 | 3.8 | 2.7 |
-| Minuet in F major, BWV Anh. 113 | 3 | 3.3 | 3.7 | 3.0 |
-| Minuet in G major, BWV Anh. 116 | 3 | 3.2 | 3.7 | 2.5 |
-| The Happy Farmer, Op. 68 No. 10 | 3 | 4.7 | 5.1 | 2.9 |
+| Soldiers' March, Op. 68 No. 2 | 1.5 | 4.1 | 4.0 | 1.6 |
+| L'Arabesque, Op. 100 No. 2 | 2 | 6.1 | 5.9 | 2.6 |
+| Sonatina Op. 36 No. 1, 1st movement | 2 | 4.5 | 4.4 | 3.8 |
+| Minuet in G major, BWV Anh. 114 | 2 | 3.1 | 3.8 | 2.1 |
+| Minuet in G minor, BWV Anh. 115 | 2 | 3.1 | 3.8 | 2.5 |
+| Minuet in F major, BWV Anh. 113 | 3 | 3.3 | 3.7 | 2.9 |
+| Minuet in G major, BWV Anh. 116 | 3 | 3.2 | 3.7 | 2.3 |
+| The Happy Farmer, Op. 68 No. 10 | 3 | 4.7 | 5.1 | 2.8 |
 | The Wild Horseman, Op. 68 No. 8 | 3 | 5.8 | 5.8 | 3.0 |
-| Ballade, Op. 100 No. 15 | 4 | 6.6 | 7.2 | 5.3 |
+| Ballade, Op. 100 No. 15 | 4 | 6.6 | 7.2 | 5.5 |
 | Invention 1, BWV 772 | 5 | 4.1 | 3.8 | 3.8 |
 | Prelude in C major, BWV 846 | 5 | 2.5 | 3.5 | 5.1 |
-| Prelude in E minor, Op. 28 No. 4 | 5 | 5.3 | 5.1 | 5.6 |
-| Für Elise | 5 | 4.9 | 4.4 | 5.5 |
+| Prelude in E minor, Op. 28 No. 4 | 5 | 5.3 | 5.1 | 5.8 |
+| Für Elise | 5 | 4.9 | 4.4 | 5.8 |
 | Album Leaf in E minor, Op. 12 No. 7 | 5 | 6.0 | 5.7 | 4.9 |
-| Of Foreign Lands and Peoples, Op. 15 No. 1 | 5 | 4.5 | 4.5 | 4.6 |
-| Sonata Op. 49 No. 1, 1st movement | 6 | 5.6 | 5.4 | 6.0 |
-| Sonata Op. 49 No. 2, 1st movement | 6 | 5.2 | 4.8 | 5.1 |
-| Prelude in B minor, Op. 28 No. 6 | 6 | 2.9 | 3.4 | 5.6 |
-| Sonata K. 545, 1st movement | 6 | 5.9 | 5.6 | 6.3 |
-| Moment musical No. 3, D. 780 | 6 | 6.6 | 6.4 | 5.2 |
-| The Little Shepherd | 7 | 3.0 | 3.2 | 6.2 |
-| Nocturne in E minor, Op. 72 No. 1 | 8 | 4.8 | 4.7 | 7.2 |
-| Clair de lune | 8 | 6.5 | 5.9 | 8.2 |
-| Rondo alla Turca, K. 331 | 8 | 6.8 | 6.0 | 6.4 |
-| Pathétique Sonata, Op. 13, 2nd movement | 8 | 5.5 | 5.1 | 8.7 |
+| Of Foreign Lands and Peoples, Op. 15 No. 1 | 5 | 4.5 | 4.5 | 4.5 |
+| Sonata Op. 49 No. 1, 1st movement | 6 | 5.6 | 5.4 | 6.4 |
+| Sonata Op. 49 No. 2, 1st movement | 6 | 5.2 | 4.8 | 5.3 |
+| Prelude in B minor, Op. 28 No. 6 | 6 | 2.9 | 3.4 | 5.4 |
+| Sonata K. 545, 1st movement | 6 | 5.9 | 5.6 | 5.7 |
+| Moment musical No. 3, D. 780 | 6 | 6.6 | 6.4 | 5.5 |
+| The Little Shepherd | 7 | 3.0 | 3.2 | 5.3 |
+| Nocturne in E minor, Op. 72 No. 1 | 8 | 4.8 | 4.7 | 7.6 |
+| Clair de lune | 8 | 6.5 | 5.9 | 7.7 |
+| Rondo alla Turca, K. 331 | 8 | 6.8 | 6.0 | 5.8 |
+| Pathétique Sonata, Op. 13, 2nd movement | 8 | 5.5 | 5.1 | 9.0 |
 
 ## Limitations
 
@@ -109,5 +110,6 @@ Model (data/grade_model.json): grade = intercept + sum(coef * (feature - mean) /
 - The RCM-to-grade concordance is our own synthesis (grade_anchors.csv header), and 15 of the anchors rest on it alone.
 - MIDI shows notes, not how they must sound: voicing, tone, pedalling and rubato, which make slow pieces hard, are invisible here (pedal could be added once CC64 is loaded).
 - Length (`log_notes`) carries much of the fit: longer pieces sit higher on exam lists. It counts notes as the file has them, so a file with written-out repeats rates longer than one without.
+- Length stops counting at 1,500 notes and every feature is clipped to the anchors' range, so nothing is extrapolated: before, pieces longer or more chromatic than every anchor got 10 (Schubert's impromptus, even at melody level). Leave-one-out MAE / nested MAE of the options tried: uncapped 0.59 / 0.65; cap 1,500 alone 0.64 / 0.68; cap 2,500 alone 0.59 / 0.60 (but Schubert stays at 9.3-10); clipping alone 0.63 / 0.68; clipping + cap 1,500 (chosen) 0.66 / 0.73. Density per minute instead of length (nested 1.18) and a per-window key measure (LOO 0.76) lost too much. The cost of the chosen option: long virtuoso pieces read low (La Campanella 6.7, Moonlight 3rd movement 7.2), because nothing here sees speed and no anchor is above grade 8. More anchors (PSyllabus, below) are the real fix.
 - The grades are for the full arrangement. Reduced levels get the same model's estimate from their own notes, which the anchors don't test.
 - Next step: PSyllabus (CC BY 4.0, 7,901 pieces with levels from ABRSM, RCM, Trinity and others, https://doi.org/10.5281/zenodo.14794592) is the obvious bigger training set; keep these anchors as the check.

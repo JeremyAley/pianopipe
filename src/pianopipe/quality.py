@@ -2,8 +2,8 @@
 
 A song is skipped (with reasons) when its hand data looks wrong, it has too few notes or is too short, a level came
 out (nearly) empty, or too many of its chords can't be played by one hand. Smaller problems become warnings that go
-into the catalog entry. The official catalog also requires hands from the file's structure (track names, two tracks
-or two channels) rather than automatic separation.
+into the catalog entry. The official catalog also requires hands from the file's structure (track names, two tracks,
+two channels, a score's staves or a choir's voices) rather than automatic separation.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from statistics import median
 from .hands import group_chords, playability_flags
 from .model import Note
 
-STRUCTURAL_HANDS = ("track_names", "two_tracks", "two_channels")
+STRUCTURAL_HANDS = ("track_names", "two_tracks", "two_channels", "staves", "satb", "leadsheet")
 
 
 @dataclass

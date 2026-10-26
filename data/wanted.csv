@@ -1,0 +1,169 @@
+category,title,composer,why,preferred_source,catalog_id,note
+classical-beginner,Minuet in G major (BWV Anh. 114),Christian Petzold,"The first ""real piece"" in most method books",mutopia 75,petzold-minuet-in-g-major-bwv-anh-114,
+classical-beginner,Minuet in G minor (BWV Anh. 115),Christian Petzold,Companion to the G major minuet in every beginner anthology,mutopia 76,petzold-minuet-in-g-minor-bwv-anh-115,
+classical-beginner,Musette in D major (BWV Anh. 126),Anonymous (Anna Magdalena Notebook),Beginner favourite for hand-position shifts,mutopia 79,anon-musette-bwv-anh-126,
+classical-beginner,Prelude in C major (BWV 846),Johann Sebastian Bach,One of the most requested pieces of all,mutopia 5,bach-prelude-in-c-major-bwv-846,
+classical-beginner,Für Elise,Ludwig van Beethoven,The single most requested piano piece,piano-midi.de,elise,
+classical-beginner,Sonatina in G major (Anh. 5 No. 1),Ludwig van Beethoven,Standard early-grade sonatina,pdmx,beethoven-sonatina-anh5-1-1,
+classical-beginner,Sonatina Op. 36 No. 1,Muzio Clementi,The standard first sonatina,piano-midi.de,clementi-opus36-1-1,
+classical-beginner,Sonatina Op. 36 No. 3,Muzio Clementi,Next sonatina in every syllabus,pdmx,,"not in Mutopia's solo piano listing, and no conflict-free PDMX piano score under that title"
+classical-beginner,Minuet in F major (K. 2),Wolfgang Amadeus Mozart,Mozart's childhood minuet; early-grade staple,pdmx,mozart-minuet-k2,
+classical-beginner,Allegro in B-flat major (K. 3),Wolfgang Amadeus Mozart,Childhood piece on most beginner lists,pdmx,mozart-allegro-k3,
+classical-beginner,"Twelve Variations on ""Ah vous dirai-je maman"" (K. 265)",Wolfgang Amadeus Mozart,The Twinkle Twinkle variations; original piano work,pdmx,mozart-variations-k265,
+classical-beginner,The Happy Farmer (Op. 68 No. 10),Robert Schumann,Album for the Young favourite,mutopia 659,schumann-op68-10-the-happy-farmer,
+classical-beginner,The Wild Horseman (Op. 68 No. 8),Robert Schumann,Album for the Young favourite,mutopia 655,schumann-op68-8-the-wild-horseman,
+classical-beginner,Arabesque (Op. 100 No. 2),Friedrich Burgmüller,Most played Burgmüller study,mutopia 203,burgmuller-arabesque,
+classical-beginner,Old French Song (Op. 39 No. 16),Pyotr Ilyich Tchaikovsky,Album for the Young favourite,mutopia 2080,tchaikovsky-op39-16-old-french-song,
+classical-beginner,Ecossaise in G major (WoO 23),Ludwig van Beethoven,Short early-grade dance,pdmx,,PDMX has only WoO 86 (no Wikidata match) and no WoO 23
+classical-beginner,Sarabande in D minor (HWV 437),George Frideric Handel,Widely requested since Barry Lyndon; original keyboard work,pdmx,handel-sarabande-hwv437,
+classical-intermediate,Moonlight Sonata 1st movement,Ludwig van Beethoven,Top-three most requested piano piece,piano-midi.de,mond-1,
+classical-intermediate,Moonlight Sonata 3rd movement,Ludwig van Beethoven,Advanced showpiece people aim for,pdmx,beethoven-moonlight-3,
+classical-intermediate,Pathétique Sonata 1st movement,Ludwig van Beethoven,Famous opening,mutopia 299,beethoven-sonata-no-8-pathetique-1st-movement-gr,
+classical-intermediate,Pathétique Sonata 2nd movement,Ludwig van Beethoven,One of the best-loved slow movements,piano-midi.de,pathetique-2,
+classical-intermediate,Pathétique Sonata 3rd movement,Ludwig van Beethoven,Completes the sonata,mutopia 296,beethoven-sonata-no-8-pathetique-3rd-movement-ro,
+classical-intermediate,Tempest Sonata 3rd movement,Ludwig van Beethoven,Popular perpetual-motion movement,pdmx,beethoven-tempest-3,
+classical-intermediate,Rondo alla Turca,Wolfgang Amadeus Mozart,The Turkish March; constantly requested,piano-midi.de,mz-331-3,
+classical-intermediate,Sonata in C major K. 545 1st movement,Wolfgang Amadeus Mozart,Sonata facile,piano-midi.de,mz-545-1,
+classical-intermediate,Fantasia in D minor (K. 397),Wolfgang Amadeus Mozart,Popular intermediate recital piece,mutopia 2034,mozart-fantasy-in-d-minor-kv-397,
+classical-intermediate,Clair de Lune,Claude Debussy,Top-five most requested,piano-midi.de,deb-clai,
+classical-intermediate,Arabesque No. 1,Claude Debussy,Very popular Debussy,mutopia 1777,debussy-arabesque-1,
+classical-intermediate,Arabesque No. 2,Claude Debussy,Companion to No. 1,mutopia 1994,debussy-deuxieme-arabesque-l66-no-2,
+classical-intermediate,Rêverie,Claude Debussy,Popular early Debussy,pdmx,debussy-reverie,
+classical-intermediate,The Girl with the Flaxen Hair,Claude Debussy,Popular prelude (1910),pdmx,debussy-flaxen-hair,
+classical-intermediate,Golliwogg's Cakewalk,Claude Debussy,Popular Children's Corner piece (1908),pdmx,,"not on Mutopia, and no conflict-free PDMX piano score"
+classical-intermediate,Gymnopédie No. 1,Erik Satie,Top-ten most requested,pdmx (Mutopia file fails the hand gate),satie-gymnopedie-1-pdmx,
+classical-intermediate,Gnossienne No. 1,Erik Satie,Very popular Satie,mutopia 2035,satie-gnossienne-1,
+classical-intermediate,Nocturne Op. 9 No. 2,Frédéric Chopin,The most requested Chopin piece,mutopia 1590,chopin-nocturne-op-9-no-2,
+classical-intermediate,Nocturne in C-sharp minor (B. 49),Frédéric Chopin,Very requested since The Pianist,pdmx,chopin-nocturne-c-sharp-minor,
+classical-intermediate,Waltz in A minor (B. 150),Frédéric Chopin,Easiest Chopin waltz; beginner favourite,pdmx,,"first published in 1955, so still protected in the US (95 years from publication); the date rule caught it"
+classical-intermediate,Minute Waltz (Op. 64 No. 1),Frédéric Chopin,Famous showpiece,mutopia 483,chopin-valse-op-64-no-1-minute-waltz,
+classical-intermediate,Waltz in C-sharp minor (Op. 64 No. 2),Frédéric Chopin,Popular waltz,pdmx,chopin-waltz-op64-2,
+classical-intermediate,Raindrop Prelude (Op. 28 No. 15),Frédéric Chopin,Popular prelude,piano-midi.de,chpn-p15,
+classical-intermediate,Prelude in E minor (Op. 28 No. 4),Frédéric Chopin,Popular easy Chopin,piano-midi.de,chpn-p4,
+classical-intermediate,Étude Op. 10 No. 3 (Tristesse),Frédéric Chopin,Most famous Chopin étude melody,pdmx,chopin-etude-op10-3,
+classical-intermediate,Träumerei,Robert Schumann,Best-known Schumann,piano-midi.de,scn15-7,
+classical-intermediate,Impromptu Op. 90 No. 2,Franz Schubert,Popular impromptu,mutopia 1551,schubert-impromptu-in-es-dur-d-899-op-90-no-2,
+classical-intermediate,Impromptu Op. 90 No. 3,Franz Schubert,Popular impromptu,mutopia 1193,schubert-impromptu-in-ges-dur-d-899-op-90-no-3,
+classical-intermediate,Impromptu Op. 90 No. 4,Franz Schubert,Popular impromptu,mutopia 1552,schubert-impromptu-in-as-dur-d-899-op-90-no-4,
+classical-intermediate,Moment Musical No. 3,Franz Schubert,Popular short piece,piano-midi.de,schumm-3,
+classical-intermediate,Spring Song (Op. 62 No. 6),Felix Mendelssohn,Best-known Song Without Words,pdmx,,"not on Mutopia, and no conflict-free PDMX piano score under that title"
+classical-intermediate,Venetian Gondola Song (Op. 19 No. 6),Felix Mendelssohn,Popular Song Without Words,piano-midi.de,mendel-op19-6,
+classical-intermediate,Wedding Day at Troldhaugen,Edvard Grieg,Popular Lyric Piece,mutopia 781,grieg-wedding-day-at-troldhaugen-o-65,
+classical-intermediate,In the Hall of the Mountain King,Edvard Grieg,Hugely requested; piano version needed,mutopia 1888 (check arranger),grieg-in-the-hall-of-the-mountain-king-op-46-no,
+classical-intermediate,Morning Mood,Edvard Grieg,Hugely requested; Grieg's own piano version needed,pdmx (period setting only),,PDMX's only piano score is a 29-second excerpt; Grieg's own piano version would come from an IMSLP scan through OMR (Phase F)
+classical-intermediate,Arietta (Op. 12 No. 1),Edvard Grieg,First Lyric Piece; intermediate staple,pdmx,grieg-arietta-op12-1,
+classical-intermediate,Humoresque (Op. 101 No. 7),Antonín Dvořák,Famous original piano melody,pdmx,dvorak-humoresque,
+classical-intermediate,Salut d'Amour,Edward Elgar,Popular melody; Elgar's piano original (1888),pdmx,elgar-salut-damour,
+classical-intermediate,Waltz Op. 39 No. 15,Johannes Brahms,The famous Brahms waltz,mutopia 794,brahms-waltz-no-15-op-39,
+classical-intermediate,June: Barcarolle,Pyotr Ilyich Tchaikovsky,The Seasons favourite,piano-midi.de,ty-juni,
+classical-intermediate,Invention No. 8 (BWV 779),Johann Sebastian Bach,Most played invention after No. 1,mutopia 61,bach-invention-8-bwv-779,
+classical-intermediate,Invention No. 13 (BWV 784),Johann Sebastian Bach,Popular A minor invention,mutopia 59,bach-invention-13-bwv-784,
+classical-intermediate,Goldberg Variations: Aria,Johann Sebastian Bach,Very requested slow piece,pdmx,,"PDMX's uploads aren't piano-only tracks (harpsichord and others), and it isn't on Mutopia's solo list"
+classical-intermediate,Passacaglia (Suite HWV 432),George Frideric Handel,Popular keyboard original,pdmx,,"every PDMX upload is Halvorsen's violin-viola version arranged for piano, not Handel's keyboard original"
+classical-intermediate,Prelude in C-sharp minor (Op. 3 No. 2),Sergei Rachmaninoff,Rachmaninoff's most famous solo piece (1892),mutopia 2033,rachmaninoff-prelude-in-c-minor-op-3-no-2,
+classical-intermediate,Pavane pour une infante défunte,Maurice Ravel,Popular original piano piece (1899),pdmx,ravel-pavane,
+classical-advanced,Fantaisie-Impromptu,Frédéric Chopin,Top requested advanced piece,piano-midi.de,chpn-op66,
+classical-advanced,Revolutionary Étude,Frédéric Chopin,Famous étude,piano-midi.de,chpn-op10-e12,
+classical-advanced,Ballade No. 1,Frédéric Chopin,Famous advanced Chopin,mutopia 1959,chopin-premiere-ballade-op-23,
+classical-advanced,Heroic Polonaise (Op. 53),Frédéric Chopin,Famous advanced Chopin,pdmx,,the PDMX score passed the review but failed the quality gate: 122 of 1918 chords can't be played by one hand
+classical-advanced,Grande Valse Brillante (Op. 18),Frédéric Chopin,Popular waltz,piano-midi.de,chp-op18,
+classical-advanced,Liebestraum No. 3,Franz Liszt,Very requested romantic piece,pdmx,liszt-liebestraum-3,
+classical-advanced,La Campanella,Franz Liszt,Famous virtuoso piece,pdmx,liszt-la-campanella,
+classical-advanced,Hungarian Rhapsody No. 2,Franz Liszt,Famous virtuoso piece (cartoons),pdmx,liszt-hungarian-rhapsody-2,
+classical-advanced,Consolation No. 3,Franz Liszt,Popular lyrical Liszt,mutopia 1647,liszt-consolation-3,
+classical-advanced,Appassionata 3rd movement,Ludwig van Beethoven,Famous finale,piano-midi.de,appass-3,
+classical-advanced,Asturias (Leyenda),Isaac Albéniz,Famous original piano piece,pdmx,albeniz-asturias,
+classical-advanced,Toccata and Fugue in D minor (Busoni transcription),Johann Sebastian Bach / Ferruccio Busoni,Famous tune; Busoni's 1899 piano version is a period setting,pdmx (period setting only),,no PDMX score of Busoni's transcription; an IMSLP scan through OMR later
+ragtime,The Entertainer,Scott Joplin,One of the most requested piano pieces of all,mutopia 263,joplin-the-entertainer,
+ragtime,Maple Leaf Rag,Scott Joplin,The classic rag,mutopia 23,joplin-maple-leaf-rag,
+ragtime,Elite Syncopations,Scott Joplin,Popular rag,mutopia 1540,joplin-elite-syncopations,
+ragtime,Solace,Scott Joplin,Popular slow rag (The Sting),mutopia 482,joplin-solace,
+ragtime,Bethena,Scott Joplin,Popular ragtime waltz,mutopia 463,joplin-bethena,
+ragtime,The Easy Winners,Scott Joplin,Popular rag,mutopia 352,joplin-the-easy-winners,
+ragtime,Peacherine Rag,Scott Joplin,Popular rag,mutopia 335,joplin-peacherine-rag,
+ragtime,Pineapple Rag,Scott Joplin,Popular rag,mutopia 1899,joplin-pineapple-rag,
+ragtime,Sun Flower Slow Drag,Scott Joplin,Popular rag,mutopia 465,joplin-sun-flower-slow-drag,
+ragtime,Wall Street Rag,Scott Joplin,Popular rag,mutopia 1543,joplin-wall-street-rag,
+ragtime,The Strenuous Life,Scott Joplin,Popular rag,mutopia 1542,joplin-the-strenuous-life,
+ragtime,The St. Louis Rag,Tom Turpin,Classic rag by Joplin's contemporary,mutopia 369,turpin-the-st-louis-rag,
+christmas,Silent Night,Franz Xaver Gruber,The most requested carol,mutopia satb 1295,silent-night,
+christmas,O Come All Ye Faithful (Adeste Fideles),John Francis Wade,Top carol,mutopia satb 1220,o-come-all-ye-faithful,
+christmas,Joy to the World,Lowell Mason (arr. from Handel),Top carol,mutopia satb 1223,joy-to-the-world,
+christmas,The First Noel,Traditional,Top carol,mutopia satb 1243,the-first-noel,
+christmas,Hark! The Herald Angels Sing,Felix Mendelssohn,Top carol,mutopia satb / pdmx hymnal setting,hark-the-herald-angels-sing,
+christmas,O Little Town of Bethlehem,Lewis Redner,Top carol (1868),mutopia satb / pdmx hymnal setting,o-little-town-of-bethlehem,
+christmas,It Came Upon the Midnight Clear,Richard Storrs Willis,Popular carol,mutopia satb 1231,it-came-upon-the-midnight-clear,
+christmas,God Rest Ye Merry Gentlemen,Traditional,Top carol,mutopia satb / house,god-rest-ye-merry-gentlemen,house arrangement
+christmas,We Three Kings,John Henry Hopkins Jr.,Popular carol (1857),mutopia satb / house,we-three-kings,house arrangement
+christmas,Away in a Manger,William J. Kirkpatrick / James R. Murray,Top carol for children,mutopia satb / pdmx,away-in-a-manger,
+christmas,Angels We Have Heard on High,Traditional (French),Popular carol,mutopia satb / house,angels-we-have-heard-on-high,house arrangement
+christmas,Deck the Halls,Traditional (Welsh),Top secular carol,house,deck-the-halls,
+christmas,Jingle Bells,James Lord Pierpont,The most requested Christmas song (1857),house,jingle-bells,
+christmas,We Wish You a Merry Christmas,Traditional (English),Top secular carol; traditional tune only,house,we-wish-you-a-merry-christmas,
+christmas,O Christmas Tree (O Tannenbaum),Traditional (German),Popular carol,house,o-christmas-tree,house arrangement
+christmas,Good King Wenceslas,Traditional (Piae Cantiones),Popular carol,mutopia 905 (melody) + house,good-king-wenceslas,
+christmas,The Holly and the Ivy,Traditional,Popular carol,mutopia 644 (melody) + house,the-holly-and-the-ivy,
+christmas,What Child Is This (Greensleeves),Traditional,Popular carol,house,what-child-is-this,
+christmas,O Holy Night,Adolphe Adam,Very requested (1847); original setting only,pdmx (period setting only),,the original is for voice and piano (1847); PDMX has only melody uploads and modern arrangements
+christmas,Lo How a Rose E'er Blooming (Es ist ein Ros),Michael Praetorius,Popular carol (1609 harmonisation),mutopia satb 1240,lo-how-a-rose-e-er-blooming,
+christmas,O Come O Come Emmanuel,Traditional (Helmore 1851),Popular Advent carol,mutopia satb / house,o-come-o-come-emmanuel,
+christmas,Once in Royal David's City,Henry John Gauntlett,Popular carol (1849),mutopia satb / house,once-in-royal-david-s-city,
+christmas,In the Bleak Midwinter,Gustav Holst,Popular carol (1906; Holst d. 1934),mutopia satb / pdmx hymnal setting,in-the-bleak-midwinter,
+christmas,Ding Dong Merrily on High,Traditional (Branle de l'Official),Popular carol,house,ding-dong-merrily-on-high,house arrangement
+christmas,Good Christian Men Rejoice (In dulci jubilo),Traditional,Popular carol,mutopia satb / house,in-dulci-jubilo-bwv368,
+christmas,Jolly Old St. Nicholas,Traditional,Popular children's Christmas song,house,jolly-old-st-nicholas,house arrangement
+christmas,Up on the Housetop,Benjamin Hanby,Popular children's Christmas song (1864),house,up-on-the-housetop,house arrangement
+christmas,Coventry Carol,Traditional,Popular carol,mutopia satb / house,coventry-carol,house arrangement
+christmas,Carol of the Bells (Shchedryk),Mykola Leontovych,Very requested; Leontovych's own setting only (not Wilhousky),cpdl / pdmx (Leontovych only),,Leontovych's own a cappella setting wasn't found (PDMX's Leontovych score is for strings; the rest are modern arrangements)
+christmas,Auld Lang Syne,Traditional (Scottish),New Year's Eve; requested every December,house,auld-lang-syne,house arrangement
+folk,Korobeiniki,Traditional (Russian),"Requested as ""the Tetris tune""; folk tune only",pdmx (period setting) / house,korobeiniki,house arrangement
+folk,Greensleeves,Traditional (English),One of the best-known folk tunes,mutopia / house,greensleeves,house arrangement
+folk,Scarborough Fair,Traditional (English),Well-known folk tune (traditional tune only),house,scarborough-fair,house arrangement
+folk,Danny Boy (Londonderry Air),Traditional (Irish),Very requested folk tune,house,danny-boy,house arrangement
+folk,Amazing Grace,Traditional (New Britain),Most requested hymn tune,mutopia satb 1283,amazing-grace,
+folk,Shenandoah,Traditional (American),Popular folk song,house,shenandoah,house arrangement
+folk,Sakura Sakura,Traditional (Japanese),Best-known Japanese folk song,house,sakura-sakura,house arrangement
+folk,Kalinka,Ivan Larionov,Best-known Russian song (1860),pdmx (period setting) / house,kalinka,house arrangement
+folk,Frère Jacques,Traditional (French),First tune many learners play,house,frere-jacques,house arrangement
+folk,Happy Birthday to You,Mildred J. Hill,Most requested occasion song (public domain since 2016),house,happy-birthday,house arrangement
+folk,Oh! Susanna,Stephen Foster,Classic American song (1848),house,oh-susanna,house arrangement
+folk,Beautiful Dreamer,Stephen Foster,Classic American song (1864),pdmx (period setting),,"only one public-domain transcription in PDMX, so the melody couldn't be checked against another"
+folk,When the Saints Go Marching In,Traditional (American),Popular beginner tune,house,when-the-saints,house arrangement
+folk,Simple Gifts,Joseph Brackett,Well-known Shaker tune (1848),house,simple-gifts,house arrangement
+folk,Swing Low Sweet Chariot,Traditional (spiritual),Well-known spiritual,house,swing-low-sweet-chariot,house arrangement
+folk,Funiculì Funiculà,Luigi Denza,Famous Neapolitan song (1880),pdmx (period setting),funiculi-funicula,house arrangement
+folk,O Sole Mio,Eduardo di Capua,Famous Neapolitan song (1898),pdmx (period setting),o-sole-mio,house arrangement
+hymn,Abide with Me (Eventide),William Henry Monk,Very well-known hymn (1861),mutopia satb,abide-with-me,
+hymn,Holy Holy Holy (Nicaea),John Bacchus Dykes,Very well-known hymn (1861),mutopia satb,holy-holy-holy,
+hymn,A Mighty Fortress (Ein feste Burg),Martin Luther / J. S. Bach,Famous chorale,mutopia satb,a-mighty-fortress-is-our-god,
+hymn,Ode to Joy (Hymn to Joy),Ludwig van Beethoven,The most requested beginner melody; period hymnal setting,mutopia satb / pdmx hymnal setting,ode-to-joy,house arrangement of the simple melody
+hymn,Jerusalem,Hubert Parry,Famous hymn (1916; Parry d. 1918),pdmx (period setting),,PDMX has only a Brazilian psalter setting
+hymn,All Things Bright and Beautiful (Royal Oak),Traditional,Well-known hymn,mutopia satb,,not among Mutopia's hymn tunes
+hymn,Nearer My God to Thee (Bethany),Lowell Mason,Famous hymn (Titanic),mutopia satb,,not among Mutopia's hymn tunes
+march,The Stars and Stripes Forever,John Philip Sousa,The best-known march,mutopia 626,sousa-the-stars-and-stripes-forever,
+march,The Liberty Bell,John Philip Sousa,Famous march,mutopia 625,sousa-the-liberty-bell-march,
+march,The Washington Post,John Philip Sousa,Famous march,mutopia 1321,sousa-the-washington-post,
+march,El Capitan,John Philip Sousa,Famous march,mutopia 600,sousa-el-capitan,
+march,Semper Fidelis,John Philip Sousa,Famous march (1888),pdmx (Sousa's piano version),,"the PDMX upload has no title or composer metadata, so it can't be checked"
+march,Wedding March,Felix Mendelssohn,Requested for weddings; period piano setting needed,pdmx (period setting only),,PDMX has only a modern piano arrangement
+march,Bridal Chorus (Here Comes the Bride),Richard Wagner,Requested for weddings; period piano setting needed,pdmx (period setting only),,PDMX has only a modern piano arrangement
+march,Turkish March (Ruins of Athens),Ludwig van Beethoven,Famous march; Anton Rubinstein's period piano setting,pdmx,beethoven-turkish-march-rubinstein,
+march,Funeral March (Sonata No. 2),Frédéric Chopin,Famous original piano march,pdmx,,"two PDMX engravings disagreed (20% top-line agreement), so neither could be checked"
+march,March of the Wooden Soldiers,Pyotr Ilyich Tchaikovsky,Album for the Young march,mutopia 1806,tchaikovsky-op39-5-wooden-soldiers,
+march,Colonel Bogey,Kenneth Alford,Famous march (1914; Alford d. 1945),pdmx (period setting),,"the PDMX upload has no title or composer metadata, so it can't be checked"
+march,Radetzky March,Johann Strauss I,Famous march; period piano setting needed,pdmx (period setting only),,PDMX has only a modern easy-piano arrangement
+christmas,Angels from the Realms of Glory,Henry Smart,Well-known carol in Britain (Regent Square),mutopia satb 1288,angels-from-the-realms-of-glory,
+hymn,O God Our Help in Ages Past (St. Anne),William Croft,Very well-known hymn,mutopia satb 1290,o-god-our-help-in-ages-past,
+hymn,Praise to the Lord the Almighty (Lobe den Herren),Traditional,Very well-known hymn,mutopia satb 1256,praise-to-the-lord-the-almighty,
+hymn,Eternal Father Strong to Save (Melita),John Bacchus Dykes,Famous hymn (the Navy Hymn),mutopia satb 1260,eternal-father-strong-to-save,
+hymn,Shall We Gather at the River,Robert Lowry,Famous American hymn,mutopia satb 1248,shall-we-gather-at-the-river,
+hymn,Blessed Assurance,Phoebe P. Knapp,Famous American hymn,mutopia satb 1225,blessed-assurance,
+hymn,It Is Well with My Soul,Philip P. Bliss,Famous hymn,mutopia satb 1301,it-is-well-with-my-soul,
+hymn,To God Be the Glory,William H. Doane,Famous hymn,mutopia satb 1298,to-god-be-the-glory,
+folk,"Twinkle, Twinkle, Little Star",Traditional (French),First tune most beginners play,house,twinkle-twinkle,house arrangement
+folk,Camptown Races,Stephen Foster,Classic American song (1850),house,camptown-races,house arrangement
+folk,Yankee Doodle,Traditional (American),Classic American tune,house,yankee-doodle,house arrangement
+folk,Brahms' Lullaby,Johannes Brahms,The best-known lullaby (1868),house,brahms-lullaby,house arrangement
+folk,Mary Had a Little Lamb,Traditional (American),Beginner staple,house,mary-had-a-little-lamb,house arrangement
+folk,"Row, Row, Row Your Boat",Traditional (American),Beginner staple and round,house,row-row-row-your-boat,house arrangement
+folk,London Bridge Is Falling Down,Traditional (English),Beginner staple,house,london-bridge,house arrangement
