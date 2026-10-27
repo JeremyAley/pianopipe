@@ -8,10 +8,9 @@ the time signature's beat (a quarter in 4/4, a dotted quarter in 6/8), a "quarte
 from __future__ import annotations
 
 import math
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from statistics import median
 
-from .difficulty import difficulty_score
 from .hands import group_chords
 from .model import Note
 
@@ -64,6 +63,13 @@ def _beat_pos(tick: int, grid) -> tuple[int, int]:
             break
         start, beat = t, b
     return (tick - start) % beat, beat
+
+
+def beat_index(tick: int, grid) -> tuple[int, int]:
+    """(time signature segment, beat number within it) of the beat `tick` falls in."""
+    i = max(0, bisect_right([t for t, _ in grid], tick) - 1)
+    start, beat = grid[i]
+    return i, (tick - start) // beat
 
 
 def _sounding_after(notes: list[Note]):
@@ -149,11 +155,22 @@ def keys(notes: list[Note], meta, end: int | None = None) -> list[str]:
     return out
 
 
-def time_signatures(meta, end: int | None = None) -> list[str]:
+def time_signatures(meta, end: int | None = None, tpb: int | None = None) -> list[str]:
+    """Every time signature in order, without repeats. With tpb, a partial bar's signature is left out: one that lasts at
+    most its own bar between two bars of another meter, the first bar's before that meter or the last bar's after it
+    (a pickup and the bar that completes it, musicxml.partial_meter)."""
+    sigs = sorted(((t, (m.numerator, m.denominator)) for t, m in meta if m.type == "time_signature"), key=lambda e: e[0])
     out = []
-    for t, m in meta:
-        if m.type == "time_signature" and (end is None or t < end):
-            name = f"{m.numerator}/{m.denominator}"
+    for i, (t, m) in enumerate(sigs):
+        if tpb:
+            nt = sigs[i + 1][0] if i + 1 < len(sigs) else end
+            after = sigs[i + 1][1] if i + 1 < len(sigs) else None
+            before = sigs[i - 1][1] if i > 0 else None
+            around = {x for x in (before, after) if x is not None}
+            if nt is not None and nt - t <= tpb * 4 * m[0] / m[1] and len(around) == 1 and m not in around:
+                continue
+        if end is None or t < end:
+            name = f"{m[0]}/{m[1]}"
             if name not in out:
                 out.append(name)
     return out
@@ -253,6 +270,8 @@ def level_features(notes: list[Note], seconds, tpb: int, meta=()) -> dict[str, f
     chords = _chords(notes, tpb)
     onsets = sum(len(chords[h]) for h in HANDS)
     f: dict[str, float] = {}
+    from .difficulty import difficulty_score  # here: difficulty.py builds its levels from this module
+
     f["difficulty"] = difficulty_score(notes, seconds, tpb)
     f["log_notes"] = math.log(len(notes))
     f["pitch_range"] = float(max(n.pitch for n in notes) - min(n.pitch for n in notes))
@@ -420,5 +439,5 @@ def skills(notes: list[Note], seconds, tpb: int, meta=()) -> list[str]:
 
     end = max(n.end for n in notes)
     tags += [f"key:{k}" for k in keys(notes, meta, end)]
-    tags += [f"time:{t}" for t in time_signatures(meta, end)]
+    tags += [f"time:{t}" for t in time_signatures(meta, end, tpb)]
     return tags

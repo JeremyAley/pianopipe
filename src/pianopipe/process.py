@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import features, grading, leadsheet, midi_io, musicxml
-from .catalog import CHARACTERS, Catalog, Level, SongEntry, sha256_file
+from . import engrave, features, grading, leadsheet, midi_io, musicxml
+from .catalog import CHARACTERS, Catalog, Level, SheetRef, SongEntry, easiest_first_key, grade_tag, sha256_file
 from .difficulty import LEVELS, difficulty_score, make_levels
 from .fingering import assign_fingering
 from .hands import split_hands
@@ -19,8 +20,6 @@ from .satb import reach
 from .tracks import pick_piano
 
 MAX_WARNINGS = 20
-# Grade tag from the full arrangement's difficulty.
-GRADES = ((4.0, "beginner"), (6.5, "intermediate"), (10.0, "advanced"))
 
 
 def slugify(text: str) -> str:
@@ -29,19 +28,26 @@ def slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-") or "song"
 
 
+def tempo_map(song: Song):
+    """seconds(tick): absolute ticks to seconds with the song's tempo map, by binary search over the cumulative time at
+    each tempo change (a scan per call was half the build time of files with thousands of tempo events)."""
+    ticks, secs, tempos = [0], [0.0], [500000]
+    for t, msg in sorted(((t, m) for t, m in song.meta if m.type == "set_tempo"), key=lambda e: e[0]):
+        # The same arithmetic, in the same order, as summing the spans one by one, so the result doesn't change.
+        secs.append(secs[-1] + (t - ticks[-1]) * tempos[-1] / 1e6 / song.ticks_per_beat)
+        ticks.append(t)
+        tempos.append(msg.tempo)
+
+    def seconds(tick: int) -> float:
+        i = max(0, bisect_right(ticks, tick) - 1)
+        return secs[i] + (tick - ticks[i]) * tempos[i] / 1e6 / song.ticks_per_beat
+
+    return seconds
+
+
 def seconds_at(song: Song, tick: int) -> float:
-    """Convert an absolute tick to seconds using the song's tempo map."""
-    tempo, last_tick, seconds = 500000, 0, 0.0
-    for t, msg in song.meta:
-        if msg.type != "set_tempo" or t >= tick:
-            continue
-        seconds += (t - last_tick) * tempo / 1e6 / song.ticks_per_beat
-        tempo, last_tick = msg.tempo, t
-    return seconds + (tick - last_tick) * tempo / 1e6 / song.ticks_per_beat
-
-
-def grade(difficulty: float) -> str:
-    return next(name for limit, name in GRADES if difficulty <= limit)
+    """Convert an absolute tick to seconds using the song's tempo map (for one lookup; tempo_map for many)."""
+    return tempo_map(song)(tick)
 
 
 def load_notes(src: str | Path, satb: bool = False):
@@ -69,10 +75,7 @@ def load_notes(src: str | Path, satb: bool = False):
         notes = reach(notes, song.ticks_per_beat)
         hand_source = "satb"
 
-    def seconds(tick: int) -> float:
-        return seconds_at(song, tick)
-
-    return song, notes, hand_source, seconds
+    return song, notes, hand_source, tempo_map(song)
 
 
 _DEFAULT = object()
@@ -86,7 +89,8 @@ def process_file(
     policy: GatePolicy | None = None,
     fingering: bool = True,
     grade_model=_DEFAULT,
-    anchors=_DEFAULT,
+    anchors: dict | None = None,
+    sheets: bool = False,
 ) -> SongEntry:
     """Process one MIDI file into out_dir/<id>/level<N>.mid and return its catalog entry.
 
@@ -96,9 +100,14 @@ def process_file(
     With a `policy`, the quality gate runs before anything is written and a failing song raises QualityError;
     without one, only its warnings are kept. With `fingering`, every level's notes get fingers (fingering.py).
     Every level gets a `grade` estimated by `grade_model` (default: the packaged grade_model.json; None for no grades),
-    except the full level of a piece in `anchors` (default: data/grade_anchors.csv), which gets its reference grade;
-    a level is never graded above the next one.
+    except the full level of a piece in `anchors` (id -> grading.Anchor, from grading.load_anchors; the official
+    build passes pipeline/data/grade_anchors.csv), which gets its reference grade. A reduced level's grade is capped
+    at a share of the full level's (grading.REDUCED_SHARE) and never above the next level's.
+    With `sheets`, each level is also engraved from its level file (engrave.py, needs pianopipe[sheet]):
+    <id>/level<N>.sheet.json and its page images, referenced by the level's `sheet`.
     """
+    if sheets and not engrave.available():
+        raise RuntimeError("sheet music needs the optional packages: pip install pianopipe[sheet]")
     src = Path(src)
     meta = dict(meta or {})
     song_id = meta.pop("id", None) or slugify(src.stem)
@@ -107,19 +116,16 @@ def process_file(
         raise QualityError(["no playable notes"])
     if grade_model is _DEFAULT:
         grade_model = grading.default_model()
-    if anchors is _DEFAULT:
-        anchors = grading.default_anchors()
     tpb = song.ticks_per_beat
 
     duration_s = round(seconds(max(n.end for n in notes)), 2)
-    levels = make_levels(notes, song.ticks_per_beat)
+    levels = make_levels(notes, song.ticks_per_beat, song.meta)
     gate = check(notes, levels, hand_source, duration_s, song.ticks_per_beat, seconds, policy or GatePolicy())
     if policy is not None and not gate.ok:
         raise QualityError(gate.reasons)
 
     difficulties = {lvl: difficulty_score(level_notes, seconds, song.ticks_per_beat) for lvl, level_notes in levels.items()}
     tags = list(meta.pop("tags", []))
-    tags.insert(0, grade(difficulties[max(levels)]))
     warnings = gate.warnings
     if len(warnings) > MAX_WARNINGS:
         warnings = warnings[: MAX_WARNINGS - 1] + [f"and {len(warnings) - MAX_WARNINGS + 1} more"]
@@ -147,16 +153,26 @@ def process_file(
             level, LEVELS[level], f"{base_url}{song_id}/level{level}.mid", sha256_file(path), len(level_notes),
             difficulties[level], fingering, tempo_bpm=tempo, skills=features.skills(level_notes, seconds, tpb, song.meta),
         )
+        if sheets:
+            sheet = engrave.engrave(path, song_dir, f"level{level}", level, entry.title)
+            lv.sheet = SheetRef(f"{base_url}{song_id}/level{level}.sheet.json", sheet.sha256, sheet.pages)
         if anchors and song_id in anchors and level == max(levels):
             lv.grade, lv.grade_source = anchors[song_id].grade, "reference"
         elif grade_model is not None:
             feats = features.level_features(level_notes, seconds, tpb, song.meta)
             lv.grade, lv.grade_source = grade_model.predict(feats), "estimated"
         entry.levels.append(lv)
-    # A reduced level is never graded above the level it was reduced towards.
+    # A reduced level is never graded above a share of the full level (grading.cap_reduced), nor above the level it
+    # was reduced towards.
+    full = entry.levels[-1]
+    if full.grade is not None:
+        for lv in entry.levels[:-1]:
+            if lv.grade is not None:
+                lv.grade = grading.cap_reduced(lv.level, lv.grade, full.grade)
     for lower, higher in zip(entry.levels[-2::-1], entry.levels[:0:-1]):
         if lower.grade is not None and higher.grade is not None:
             lower.grade = min(lower.grade, higher.grade)
+    entry.tags.insert(0, grade_tag(full.grade, full.difficulty))
     return entry
 
 
@@ -189,14 +205,17 @@ def build_catalog(
     sources: dict | list | None = None,
     policy: GatePolicy | None = None,
     easiest_first: bool = False,
+    anchors: dict | None = None,
+    sheets: bool = False,
 ) -> BuildResult:
     """Process MIDI and MusicXML files into out_dir/songs/<id>/ with out_dir/catalog.json and out_dir/build-report.json.
 
     `sources` is either a dict mapping file names in src_dir to their metadata (every .mid/.midi in src_dir is
     built), or a manifest list of entries whose "file" is a path relative to src_dir (only those are built, in
     order). Files that fail the quality gate or can't be read are skipped and listed in the report, so one bad file
-    doesn't stop a catalog build. With `easiest_first`, songs are sorted by the full level's difficulty (then title),
-    so a browser's first page holds the beginner pieces.
+    doesn't stop a catalog build. With `easiest_first`, songs are sorted by the full level's grade (then difficulty
+    and title, catalog.easiest_first_key), so a browser's first page holds the beginner pieces. `anchors` gives
+    reference grades (see process_file); `sheets` engraves every level (see process_file).
     """
     src_dir, out_dir = Path(src_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -217,13 +236,13 @@ def build_catalog(
             result.skipped.append((rel, "file missing (run the fetch step)"))
         else:
             try:
-                result.catalog.songs.append(process_file(path, out_dir / "songs", meta, "songs/", policy))
+                result.catalog.songs.append(process_file(path, out_dir / "songs", meta, "songs/", policy, anchors=anchors, sheets=sheets))
             except QualityError as exc:
                 result.skipped.append((rel, str(exc)))
             except Exception as exc:  # noqa: BLE001 - keep building the rest of the catalog
                 result.skipped.append((rel, f"error: {exc}"))
     if easiest_first:
-        result.catalog.songs.sort(key=lambda s: (s.levels[-1].difficulty or 0.0, s.title.lower(), s.id))
+        result.catalog.songs.sort(key=easiest_first_key)
     result.catalog.save(out_dir / "catalog.json")
     (out_dir / "build-report.json").write_text(
         json.dumps(result.report(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

@@ -69,6 +69,15 @@ DETACHED_SCALE = 0.4  # how much of the span costs apply after a rest
 MAX_HAND = 5
 RELEASE = 4.0  # letting a held note go before its end
 HOLD_REACH = 12  # semitones: a held note further than this from the next notes is treated as released
+MAX_PRINTED_RETRIES = 50  # searches tried while dropping printed fingers that don't fit, before ignoring them all
+
+
+class ForcedFingerError(ValueError):
+    """The forced fingers of these notes (indices) can't all be used at one onset."""
+
+    def __init__(self, message: str, notes: list[int]):
+        super().__init__(message)
+        self.notes = notes
 
 
 def _black(pitch: int) -> bool:
@@ -209,7 +218,10 @@ def search(
                 rests = [_key_x(rh_pitch(notes[i].pitch)) - KEY_OFFSET[fmap[i]] for i in chord]
                 states.append(_State(fmap, _vertical(pitches, fingers, onsets), sum(rests) / len(rests)))
         if not states:
-            raise ValueError(f"forced fingers {[forced.get(i) for i in chord]} don't fit the notes at tick {start}")
+            raise ForcedFingerError(
+                f"forced fingers {[forced.get(i) for i in chord]} don't fit the notes at tick {start}",
+                [i for i in chord if i in forced],
+            )
 
         if trellis:
             prev_chord = onset_sets[-1]
@@ -289,14 +301,30 @@ def _chord_move(p: _State, s: _State, prev_chord: list[int], chord: list[int], n
     return cost
 
 
+def keep_printed(notes: list[Note], hand: str, ticks_per_beat: int, printed: dict[int, int]) -> dict[int, int]:
+    """search() with the printed fingers (note index -> finger) pinned, as many as fit: when an onset's printed
+    fingers can't be played together (two notes of a chord on one finger, a chord reordered by the hand split), that
+    onset's printed fingers are dropped and the search runs again."""
+    printed = dict(printed)
+    for _ in range(MAX_PRINTED_RETRIES):
+        try:
+            return search(notes, hand, ticks_per_beat, printed)[0]
+        except ForcedFingerError as exc:
+            for i in exc.notes:
+                printed.pop(i, None)
+    return search(notes, hand, ticks_per_beat)[0]
+
+
 def assign_fingering(notes: list[Note], ticks_per_beat: int = 480) -> list[Note]:
-    """Return the notes (same order) with `finger` set for every note that has a hand."""
+    """Return the notes (same order) with `finger` set for every note that has a hand. A finger the note already has
+    (printed in a MusicXML score) is kept where it fits (keep_printed); the search fills in the rest around it."""
     out = list(notes)
     for hand in ("R", "L"):
         idx = [i for i, n in enumerate(notes) if n.hand == hand]
         hand_notes = sorted((notes[i] for i in idx), key=lambda n: (n.start, n.pitch))
         order = {id(n): k for k, n in enumerate(hand_notes)}
-        fingers = finger_hand(hand_notes, hand, ticks_per_beat)
+        printed = {k: n.finger for k, n in enumerate(hand_notes) if n.finger in FINGERS}
+        fingers = keep_printed(hand_notes, hand, ticks_per_beat, printed) if printed else finger_hand(hand_notes, hand, ticks_per_beat)
         for i in idx:
             out[i] = replace(notes[i], finger=fingers[order[id(notes[i])]])
     return out

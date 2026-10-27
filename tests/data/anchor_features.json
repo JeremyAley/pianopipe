@@ -1,0 +1,499 @@
+{
+ "mae": 0.531,
+ "anchors": [
+  {
+   "id": "petzold-minuet-in-g-major-bwv-anh-114",
+   "title": "Minuet in G major, BWV Anh. 114",
+   "file": "mutopia/midi/75-anna-magdalena-04.mid",
+   "grade": 2.0,
+   "predicted": 2.1,
+   "features": {
+    "difficulty": 3.1,
+    "log_notes": 5.318119993844216,
+    "pitch_range": 40.0,
+    "outside_key": 0.02450980392156865,
+    "rhythm_values": 4.0,
+    "syncopation": 0.0,
+    "independence": 0.5434782608695652,
+    "polyphony": 0.025,
+    "span": 0.0,
+    "shifts": 0.12
+   }
+  },
+  {
+   "id": "petzold-minuet-in-g-minor-bwv-anh-115",
+   "title": "Minuet in G minor, BWV Anh. 115",
+   "file": "mutopia/midi/76-anna-magdalena-05.mid",
+   "grade": 2.0,
+   "predicted": 2.4,
+   "features": {
+    "difficulty": 3.1,
+    "log_notes": 5.293304824724492,
+    "pitch_range": 39.0,
+    "outside_key": 0.06030150753768848,
+    "rhythm_values": 3.0,
+    "syncopation": 0.0,
+    "independence": 0.5373134328358209,
+    "polyphony": 0.0,
+    "span": 0.0,
+    "shifts": 0.14136125654450263
+   }
+  },
+  {
+   "id": "anon-minuet-in-f-major-bwv-anh-113",
+   "title": "Minuet in F major, BWV Anh. 113",
+   "file": "mutopia/midi/74-anna-magdalena-03.mid",
+   "grade": 3.0,
+   "predicted": 2.9,
+   "features": {
+    "difficulty": 3.3,
+    "log_notes": 5.556828061699537,
+    "pitch_range": 44.0,
+    "outside_key": 0.06563706563706562,
+    "rhythm_values": 4.0,
+    "syncopation": 0.0,
+    "independence": 0.5138121546961326,
+    "polyphony": 0.0,
+    "span": 0.0,
+    "shifts": 0.11583011583011583
+   }
+  },
+  {
+   "id": "anon-minuet-in-g-major-bwv-anh-116",
+   "title": "Minuet in G major, BWV Anh. 116",
+   "file": "mutopia/midi/77-anna-magdalena-07.mid",
+   "grade": 3.0,
+   "predicted": 2.4,
+   "features": {
+    "difficulty": 3.2,
+    "log_notes": 5.736572297479192,
+    "pitch_range": 43.0,
+    "outside_key": 0.016129032258064502,
+    "rhythm_values": 2.0,
+    "syncopation": 0.0,
+    "independence": 0.5024154589371981,
+    "polyphony": 0.0,
+    "span": 0.0,
+    "shifts": 0.19032258064516128
+   }
+  },
+  {
+   "id": "schumann-op68-2-soldiers-march",
+   "title": "Soldiers' March, Op. 68 No. 2",
+   "file": "mutopia/midi/650-schumann-op68-02-marche-militaire.mid",
+   "grade": 1.5,
+   "predicted": 1.5,
+   "features": {
+    "difficulty": 4.1,
+    "log_notes": 5.7430031878094825,
+    "pitch_range": 31.0,
+    "outside_key": 0.012820512820512775,
+    "rhythm_values": 3.0,
+    "syncopation": 0.0,
+    "independence": 0.0,
+    "polyphony": 0.0,
+    "span": 8.0,
+    "shifts": 0.2641509433962264
+   }
+  },
+  {
+   "id": "schumann-op68-8-the-wild-horseman",
+   "title": "The Wild Horseman, Op. 68 No. 8",
+   "file": "mutopia/midi/655-schumann-op68-08-cavalier-sauvage.mid",
+   "grade": 3.0,
+   "predicted": 3.0,
+   "features": {
+    "difficulty": 5.8,
+    "log_notes": 6.0330862217988015,
+    "pitch_range": 29.0,
+    "outside_key": 0.07194244604316546,
+    "rhythm_values": 3.0,
+    "syncopation": 0.0,
+    "independence": 0.08695652173913043,
+    "polyphony": 0.0,
+    "span": 8.0,
+    "shifts": 0.11721611721611722
+   }
+  },
+  {
+   "id": "schumann-op68-10-the-happy-farmer",
+   "title": "The Happy Farmer, Op. 68 No. 10",
+   "file": "mutopia/midi/659-schumann-op68-10-gai-laboureur.mid",
+   "grade": 3.0,
+   "predicted": 2.8,
+   "features": {
+    "difficulty": 4.7,
+    "log_notes": 5.863631175598097,
+    "pitch_range": 31.0,
+    "outside_key": 0.011363636363636354,
+    "rhythm_values": 3.0,
+    "syncopation": 0.2474747474747475,
+    "independence": 0.34375,
+    "polyphony": 0.10810810810810811,
+    "span": 9.0,
+    "shifts": 0.26126126126126126
+   }
+  },
+  {
+   "id": "burgmuller-arabesque",
+   "title": "L'Arabesque, Op. 100 No. 2",
+   "file": "mutopia/midi/203-25EF-02.mid",
+   "grade": 2.0,
+   "predicted": 2.5,
+   "features": {
+    "difficulty": 6.1,
+    "log_notes": 5.645446897643238,
+    "pitch_range": 48.0,
+    "outside_key": 0.028268551236749095,
+    "rhythm_values": 4.0,
+    "syncopation": 0.0,
+    "independence": 0.5285714285714286,
+    "polyphony": 0.0,
+    "span": 8.0,
+    "shifts": 0.11282051282051282
+   }
+  },
+  {
+   "id": "burgmuller-ballade",
+   "title": "Ballade, Op. 100 No. 15",
+   "file": "mutopia/midi/227-25EF-15.mid",
+   "grade": 4.0,
+   "predicted": 5.3,
+   "features": {
+    "difficulty": 6.6,
+    "log_notes": 6.628041376179533,
+    "pitch_range": 53.0,
+    "outside_key": 0.1415343915343915,
+    "rhythm_values": 4.0,
+    "syncopation": 0.0,
+    "independence": 0.3,
+    "polyphony": 0.0,
+    "span": 8.0,
+    "shifts": 0.14532019704433496
+   }
+  },
+  {
+   "id": "clementi-opus36-1-1",
+   "title": "Sonatina Op. 36 No. 1, 1st movement",
+   "file": "piano-midi-de/clementi_opus36_1_1.mid",
+   "grade": 2.0,
+   "predicted": 3.6,
+   "features": {
+    "difficulty": 4.5,
+    "log_notes": 6.501289670540389,
+    "pitch_range": 50.0,
+    "outside_key": 0.04504504504504503,
+    "rhythm_values": 4.0,
+    "syncopation": 0.09782608695652174,
+    "independence": 0.23346303501945526,
+    "polyphony": 0.0,
+    "span": 0.0,
+    "shifts": 0.22103658536585366
+   }
+  },
+  {
+   "id": "grieg-album-leaf-op12-7",
+   "title": "Album Leaf in E minor, Op. 12 No. 7",
+   "file": "mutopia/midi/2194-No03_Albumblatt.mid",
+   "grade": 5.0,
+   "predicted": 4.9,
+   "features": {
+    "difficulty": 6.0,
+    "log_notes": 6.419994928147142,
+    "pitch_range": 48.0,
+    "outside_key": 0.08469055374592838,
+    "rhythm_values": 5.0,
+    "syncopation": 0.135,
+    "independence": 0.3333333333333333,
+    "polyphony": 0.14410480349344978,
+    "span": 9.0,
+    "shifts": 0.4148471615720524
+   }
+  },
+  {
+   "id": "elise",
+   "title": "Für Elise",
+   "file": "piano-midi-de/elise.mid",
+   "grade": 5.0,
+   "predicted": 5.7,
+   "features": {
+    "difficulty": 4.9,
+    "log_notes": 6.947937068614969,
+    "pitch_range": 67.0,
+    "outside_key": 0.1344860710854947,
+    "rhythm_values": 5.0,
+    "syncopation": 0.0,
+    "independence": 0.2624203821656051,
+    "polyphony": 0.0,
+    "span": 4.0,
+    "shifts": 0.289247311827957
+   }
+  },
+  {
+   "id": "beethoven-sonata-op49-1-1",
+   "title": "Sonata Op. 49 No. 1, 1st movement",
+   "file": "mutopia/midi/912-LVB_Sonate_49no1_1.mid",
+   "grade": 6.0,
+   "predicted": 6.4,
+   "features": {
+    "difficulty": 5.6,
+    "log_notes": 7.149131598557407,
+    "pitch_range": 58.0,
+    "outside_key": 0.1374705420267086,
+    "rhythm_values": 2.0,
+    "syncopation": 0.07255813953488371,
+    "independence": 0.39944903581267216,
+    "polyphony": 0.0074005550416281225,
+    "span": 5.0,
+    "shifts": 0.20166512488436633
+   }
+  },
+  {
+   "id": "beethoven-sonata-op49-2-1",
+   "title": "Sonata Op. 49 No. 2, 1st movement",
+   "file": "mutopia/midi/776-LVB_Sonate_49no2_1.mid",
+   "grade": 6.0,
+   "predicted": 5.5,
+   "features": {
+    "difficulty": 5.2,
+    "log_notes": 7.3938782901077555,
+    "pitch_range": 57.0,
+    "outside_key": 0.0627306273062731,
+    "rhythm_values": 3.0,
+    "syncopation": 0.004676018704074816,
+    "independence": 0.3678990081154193,
+    "polyphony": 0.004638833664678595,
+    "span": 0.0,
+    "shifts": 0.11928429423459244
+   }
+  },
+  {
+   "id": "mz-545-1",
+   "title": "Sonata K. 545, 1st movement",
+   "file": "piano-midi-de/mz_545_1.mid",
+   "grade": 6.0,
+   "predicted": 5.7,
+   "features": {
+    "difficulty": 5.9,
+    "log_notes": 7.906178840394815,
+    "pitch_range": 53.0,
+    "outside_key": 0.07590272660280029,
+    "rhythm_values": 4.0,
+    "syncopation": 0.0,
+    "independence": 0.4265129682997118,
+    "polyphony": 0.0,
+    "span": 4.0,
+    "shifts": 0.16136724960254373
+   }
+  },
+  {
+   "id": "bach-prelude-in-c-major-bwv-846",
+   "title": "Prelude in C major, BWV 846",
+   "file": "mutopia/midi/5-wtk1-prelude1.mid",
+   "grade": 5.0,
+   "predicted": 5.2,
+   "features": {
+    "difficulty": 2.5,
+    "log_notes": 6.3080984415095305,
+    "pitch_range": 45.0,
+    "outside_key": 0.06921675774134795,
+    "rhythm_values": 3.0,
+    "syncopation": 0.0,
+    "independence": 0.7559633027522936,
+    "polyphony": 0.12087912087912088,
+    "span": 0.0,
+    "shifts": 0.24358974358974358
+   }
+  },
+  {
+   "id": "bach-invention-1-bwv-772",
+   "title": "Invention 1, BWV 772",
+   "file": "mutopia/midi/40-bach-invention-01.mid",
+   "grade": 5.0,
+   "predicted": 3.9,
+   "features": {
+    "difficulty": 4.1,
+    "log_notes": 6.126869184114185,
+    "pitch_range": 48.0,
+    "outside_key": 0.07423580786026196,
+    "rhythm_values": 2.0,
+    "syncopation": 0.0,
+    "independence": 0.5014925373134328,
+    "polyphony": 0.0,
+    "span": 0.0,
+    "shifts": 0.09010989010989011
+   }
+  },
+  {
+   "id": "scn15-1",
+   "title": "Of Foreign Lands and Peoples, Op. 15 No. 1",
+   "file": "piano-midi-de/scn15_1.mid",
+   "grade": 5.0,
+   "predicted": 4.6,
+   "features": {
+    "difficulty": 4.5,
+    "log_notes": 6.095824562432225,
+    "pitch_range": 37.0,
+    "outside_key": 0.04054054054054057,
+    "rhythm_values": 4.0,
+    "syncopation": 0.0,
+    "independence": 0.6901408450704225,
+    "polyphony": 0.18478260869565216,
+    "span": 6.0,
+    "shifts": 0.483695652173913
+   }
+  },
+  {
+   "id": "chpn-p4",
+   "title": "Prelude in E minor, Op. 28 No. 4",
+   "file": "piano-midi-de/chpn-p4.mid",
+   "grade": 5.0,
+   "predicted": 5.7,
+   "features": {
+    "difficulty": 5.3,
+    "log_notes": 6.403574197934815,
+    "pitch_range": 56.0,
+    "outside_key": 0.1539735099337748,
+    "rhythm_values": 3.0,
+    "syncopation": 0.0,
+    "independence": 0.5885167464114832,
+    "polyphony": 0.0,
+    "span": 12.0,
+    "shifts": 0.43359375
+   }
+  },
+  {
+   "id": "chopin-prelude-op28-6",
+   "title": "Prelude in B minor, Op. 28 No. 6",
+   "file": "mutopia/midi/469-Chop-28-6.mid",
+   "grade": 6.0,
+   "predicted": 5.6,
+   "features": {
+    "difficulty": 2.9,
+    "log_notes": 6.003887067106539,
+    "pitch_range": 43.0,
+    "outside_key": 0.11851851851851847,
+    "rhythm_values": 4.0,
+    "syncopation": 0.0,
+    "independence": 0.5,
+    "polyphony": 0.2509090909090909,
+    "span": 9.0,
+    "shifts": 0.21818181818181817
+   }
+  },
+  {
+   "id": "chopin-nocturne-op72-1",
+   "title": "Nocturne in E minor, Op. 72 No. 1",
+   "file": "mutopia/midi/509-nocturne_in_e_minor.mid",
+   "grade": 8.0,
+   "predicted": 7.7,
+   "features": {
+    "difficulty": 4.8,
+    "log_notes": 7.003065458786462,
+    "pitch_range": 65.0,
+    "outside_key": 0.1863636363636364,
+    "rhythm_values": 3.0,
+    "syncopation": 0.0011185682326621924,
+    "independence": 0.6746031746031746,
+    "polyphony": 0.0867237687366167,
+    "span": 12.0,
+    "shifts": 0.34475374732334046
+   }
+  },
+  {
+   "id": "debussy-cc-5",
+   "title": "The Little Shepherd",
+   "file": "piano-midi-de/debussy_cc_5.mid",
+   "grade": 7.0,
+   "predicted": 6.4,
+   "features": {
+    "difficulty": 3.0,
+    "log_notes": 5.817111159963204,
+    "pitch_range": 60.0,
+    "outside_key": 0.23809523809523814,
+    "rhythm_values": 8.0,
+    "syncopation": 0.05905511811023622,
+    "independence": 0.5614035087719298,
+    "polyphony": 0.11194029850746269,
+    "span": 7.0,
+    "shifts": 0.17537313432835822
+   }
+  },
+  {
+   "id": "deb-clai",
+   "title": "Clair de lune",
+   "file": "piano-midi-de/deb_clai.mid",
+   "grade": 8.0,
+   "predicted": 8.3,
+   "features": {
+    "difficulty": 6.5,
+    "log_notes": 7.307202314764738,
+    "pitch_range": 70.0,
+    "outside_key": 0.08584842387659286,
+    "rhythm_values": 5.0,
+    "syncopation": 0.064,
+    "independence": 0.5967940813810111,
+    "polyphony": 0.4294060370009737,
+    "span": 12.0,
+    "shifts": 0.4148003894839338
+   }
+  },
+  {
+   "id": "mz-331-3",
+   "title": "Rondo alla Turca, K. 331",
+   "file": "piano-midi-de/mz_331_3.mid",
+   "grade": 8.0,
+   "predicted": 6.3,
+   "features": {
+    "difficulty": 6.8,
+    "log_notes": 7.9441374911141125,
+    "pitch_range": 50.0,
+    "outside_key": 0.14721532458318554,
+    "rhythm_values": 4.0,
+    "syncopation": 0.002688172043010753,
+    "independence": 0.12789203084832904,
+    "polyphony": 0.006238859180035651,
+    "span": 12.0,
+    "shifts": 0.2798573975044563
+   }
+  },
+  {
+   "id": "pathetique-2",
+   "title": "Pathétique Sonata, Op. 13, 2nd movement",
+   "file": "piano-midi-de/pathetique_2.mid",
+   "grade": 8.0,
+   "predicted": 8.8,
+   "features": {
+    "difficulty": 5.5,
+    "log_notes": 7.403061091090091,
+    "pitch_range": 60.0,
+    "outside_key": 0.18951858622790985,
+    "rhythm_values": 5.0,
+    "syncopation": 0.003215434083601286,
+    "independence": 0.44986449864498645,
+    "polyphony": 0.2725546058879392,
+    "span": 12.0,
+    "shifts": 0.31339031339031337
+   }
+  },
+  {
+   "id": "schumm-3",
+   "title": "Moment musical No. 3, D. 780",
+   "file": "piano-midi-de/schumm-3.mid",
+   "grade": 6.0,
+   "predicted": 5.5,
+   "features": {
+    "difficulty": 6.6,
+    "log_notes": 6.964135612418245,
+    "pitch_range": 45.0,
+    "outside_key": 0.1068052930056711,
+    "rhythm_values": 5.0,
+    "syncopation": 0.02773497688751926,
+    "independence": 0.19437939110070257,
+    "polyphony": 0.06412213740458016,
+    "span": 9.0,
+    "shifts": 0.5755725190839694
+   }
+  }
+ ]
+}

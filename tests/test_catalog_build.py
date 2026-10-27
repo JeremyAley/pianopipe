@@ -136,10 +136,15 @@ def _catalog(**level):
         {"sha256": "abc"},
         {"difficulty": 0},
         {"difficulty": 11},
+        {"url": "http://example.org/level1.mid"},
+        {"url": "file:///etc/passwd"},
+        {"url": "//example.org/level1.mid"},
+        {"url": ""},
     ],
 )
 def test_validate_rejects_bad_levels(bad):
     validate(_catalog())
+    validate(_catalog(url="https://example.org/level1.mid"))
     with pytest.raises(ValueError):
         validate(_catalog(**bad))
 

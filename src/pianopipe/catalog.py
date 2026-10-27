@@ -16,6 +16,36 @@ from pathlib import Path
 CATALOG_VERSION = 1
 GRADE_SOURCES = ("reference", "estimated")
 CHARACTERS = ("agile", "lyrical", "other")
+# The song's first tag, from its full level's grade: the exam boards' own three tiers (ABRSM and Trinity put grades 1-3
+# at RQF level 1, 4-5 at level 2 and 6-8 at level 3; docs/learning-mode.md 1.1). A grade below the limit gets the tag.
+GRADE_TAGS = ((3.5, "beginner"), (5.5, "intermediate"), (float("inf"), "advanced"))
+# Without a grade (no grade model), the full level's difficulty decides, with these limits (up to and including).
+DIFFICULTY_TAGS = ((4.0, "beginner"), (6.5, "intermediate"), (float("inf"), "advanced"))
+
+
+def grade_tag(grade: float | None, difficulty: float | None = None) -> str:
+    """beginner, intermediate or advanced for a song whose full level has this grade (or, without one, difficulty)."""
+    if grade is not None:
+        return next(name for limit, name in GRADE_TAGS if grade < limit)
+    return next(name for limit, name in DIFFICULTY_TAGS if (difficulty or 0.0) <= limit)
+
+
+def easiest_first_key(song: "SongEntry") -> tuple:
+    """Sort key for an easiest-first catalog: the full level's grade, then its difficulty, then title and id. Songs
+    without a grade go after the graded ones."""
+    full = song.levels[-1]
+    return (full.grade is None, full.grade or 0.0, full.difficulty or 0.0, song.title.lower(), song.id)
+
+
+MAX_SHEET_PAGES = 64
+
+
+@dataclass
+class SheetRef:
+    """A level's sheet music: its sheet.json (bar map and page list, docs/formats.md) and how many pages it has."""
+    url: str
+    sha256: str
+    pages: int
 
 
 @dataclass
@@ -31,6 +61,7 @@ class Level:
     grade_source: str = ""  # optional: "reference" (documented grade) or "estimated" (from the notes)
     tempo_bpm: int | None = None  # optional: target tempo in quarter notes per minute
     skills: list[str] = field(default_factory=list)  # optional: tags the level practises, see features.skills
+    sheet: SheetRef | None = None  # optional: engraved notation of this level (engrave.py)
 
 
 @dataclass
@@ -69,7 +100,7 @@ class Catalog:
                 if not song[key]:
                     del song[key]
             for lv in song["levels"]:
-                for key in ("difficulty", "grade", "tempo_bpm"):
+                for key in ("difficulty", "grade", "tempo_bpm", "sheet"):
                     if lv[key] is None:
                         del lv[key]
                 for key in ("fingering", "grade_source", "skills"):
@@ -84,10 +115,13 @@ class Catalog:
     def load(cls, path: str | Path) -> "Catalog":
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         validate(data)
-        songs = [
-            SongEntry(**{**_known(SongEntry, s), "levels": [Level(**_known(Level, lv)) for lv in s["levels"]]})
-            for s in data["songs"]
-        ]
+        def level(lv: dict) -> Level:
+            known = _known(Level, lv)
+            if known.get("sheet") is not None:
+                known["sheet"] = SheetRef(**_known(SheetRef, known["sheet"]))
+            return Level(**known)
+
+        songs = [SongEntry(**{**_known(SongEntry, s), "levels": [level(lv) for lv in s["levels"]]}) for s in data["songs"]]
         return cls(name=data["name"], songs=songs, version=data["version"])
 
 
@@ -137,6 +171,8 @@ def validate(data: dict) -> None:
             levels.add(lv["level"])
             if not _SHA256.match(str(lv["sha256"])):
                 raise ValueError(f"song {s['id']} level {lv['level']} sha256 is not 64 lowercase hex digits")
+            if not url_allowed(lv["url"]):
+                raise ValueError(f"song {s['id']} level {lv['level']} url must be relative to catalog.json or https")
             diff = lv.get("difficulty")
             if diff is not None and not (isinstance(diff, (int, float)) and 1 <= diff <= 10):
                 raise ValueError(f"song {s['id']} level {lv['level']} difficulty {diff!r} is outside 1-10")
@@ -156,6 +192,25 @@ def validate(data: dict) -> None:
             skills = lv.get("skills", [])
             if not isinstance(skills, list) or not all(isinstance(k, str) for k in skills):
                 raise ValueError(f"{where} skills must be a list of strings")
+            sheet = lv.get("sheet")
+            if sheet is not None:
+                if not isinstance(sheet, dict) or not url_allowed(sheet.get("url")):
+                    raise ValueError(f"{where} sheet needs a url relative to catalog.json or https")
+                if not _SHA256.match(str(sheet.get("sha256"))):
+                    raise ValueError(f"{where} sheet sha256 is not 64 lowercase hex digits")
+                pages = sheet.get("pages")
+                if not (isinstance(pages, int) and not isinstance(pages, bool) and 1 <= pages <= MAX_SHEET_PAGES):
+                    raise ValueError(f"{where} sheet pages {pages!r} is outside 1-{MAX_SHEET_PAGES}")
+
+
+def url_allowed(url) -> bool:
+    """A level url the app downloads: relative to catalog.json ("songs/x/level1.mid") or https. No http, file or
+    other schemes, and no host-relative "//host/..." (the app's CatalogFile.UrlAllowed, keep them together)."""
+    if not isinstance(url, str) or not url or url.startswith(("//", "\\")):
+        return False
+    if ":" in url:  # a scheme (or a drive letter)
+        return url.lower().startswith("https://")
+    return True
 
 
 def _number(v) -> bool:
@@ -183,4 +238,41 @@ def verify(path: str | Path) -> list[str]:
                 problems.append(f"{s['id']} level {lv['level']}: {lv['url']} is missing")
             elif sha256_file(file) != lv["sha256"]:
                 problems.append(f"{s['id']} level {lv['level']}: sha256 does not match {lv['url']}")
+            sheet = lv.get("sheet")
+            if sheet and "://" not in sheet["url"]:
+                problems += [f"{s['id']} level {lv['level']}: {p}" for p in verify_sheet(path.parent / sheet["url"], sheet)]
+    return problems
+
+
+PAGE_NAME = re.compile(r"[A-Za-z0-9._-]+\.png")
+
+
+def verify_sheet(path: Path, ref: dict) -> list[str]:
+    """Check a sheet.json against its catalog reference, and its pages against their sha256 (docs/formats.md)."""
+    if not path.exists():
+        return [f"{ref['url']} is missing"]
+    if sha256_file(path) != ref["sha256"]:
+        return [f"sha256 does not match {ref['url']}"]
+    data = json.loads(path.read_text(encoding="utf-8"))
+    problems = []
+    if data.get("version") != 1:
+        problems.append(f"{ref['url']}: unsupported version {data.get('version')!r}")
+    pages = data.get("pages", [])
+    if len(pages) != ref["pages"]:
+        problems.append(f"{ref['url']}: {len(pages)} pages, the catalog says {ref['pages']}")
+    for page in pages:
+        name = str(page.get("file", ""))
+        if not PAGE_NAME.fullmatch(name):
+            problems.append(f"{ref['url']}: page file {name!r} must be a .png name next to the sheet.json")
+            continue
+        file = path.parent / name
+        if not file.exists():
+            problems.append(f"{ref['url']}: {name} is missing")
+        elif sha256_file(file) != page.get("sha256"):
+            problems.append(f"{ref['url']}: sha256 does not match {name}")
+    systems = len(data.get("systems", []))
+    for i, m in enumerate(data.get("measures", [])):
+        if m.get("bar") != i + 1 or not 0 <= m.get("system", -1) < systems:
+            problems.append(f"{ref['url']}: measure {i + 1} is out of order or names a missing system")
+            break
     return problems

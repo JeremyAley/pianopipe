@@ -5,6 +5,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+import mido
 import pytest
 
 from pianopipe import musicxml
@@ -292,6 +293,21 @@ def test_process_file_end_to_end(tmp_path):
     assert entry.hand_source == "staves"
     assert entry.levels[-1].fingering and entry.levels[-1].tempo_bpm == 96
     assert OFFICIAL.allowed_hand_sources.count("staves") == 1
+
+
+def test_printed_fingering_reaches_the_level_files(tmp_path):
+    fing = lambda f: f"<notations><technical><fingering>{f}</fingering></technical></notations>"  # noqa: E731
+    bars = []
+    for i in range(20):
+        # C D E F with the printed 2 3 4 1 instead of the plain 1 2 3 4
+        rh = "".join(note(s, 4, 4, 1, 1, fing(f) if i == 0 else "") for s, f in zip("CDEF", (2, 3, 4, 1)))
+        bars.append(bar(rh, note("C", 3, 8, 5, 2) + note("G", 2, 8, 5, 2)))
+    p = write(tmp_path, score([("Piano", bars)]))
+    process_file(p, tmp_path / "out", {"id": "f"}, policy=GatePolicy(min_duration_s=10))
+    for level in (1, 4):
+        mid = mido.MidiFile(tmp_path / "out" / "f" / f"level{level}.mid")
+        texts = [m.text for m in mid.tracks[1] if m.type == "text"][:4]
+        assert texts == ["f2", "f3", "f4", "f1"], level
 
 
 def test_bad_files(tmp_path):

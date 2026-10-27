@@ -582,7 +582,7 @@ def load(path: str | Path) -> Score:
     notes = [nt for nt in notes if nt.end > nt.start]
     hand_source = "none" if any(nt.hand is None for nt in notes) else ("satb" if satb else "staves")
     notes = merge_unisons(notes)
-    song = Song(ticks_per_beat=tpb, meta=_meta(parts, merged, order, starts, tpb, warnings))
+    song = Song(ticks_per_beat=tpb, meta=_meta(parts, merged, order, starts, tpb, warnings, total))
     song.tracks = [
         TrackInfo(0, "RH", sorted((x for x in notes if x.hand == "R"), key=lambda x: (x.start, x.pitch))),
         TrackInfo(1, "LH", sorted((x for x in notes if x.hand == "L"), key=lambda x: (x.start, x.pitch))),
@@ -629,9 +629,19 @@ def merge_unisons(notes: list[Note]) -> list[Note]:
     return sorted(out, key=lambda n: (n.start, n.pitch))
 
 
+def partial_meter(length: Fraction, den: int) -> tuple[int, int]:
+    """The time signature of a bar `length` quarters long (a pickup), in the meter's own unit where it fits."""
+    while den < 64 and (length * den / 4).denominator != 1:
+        den *= 2
+    return max(1, round(length * den / 4)), den
+
+
 def _meta(parts: list[_Part], merged: list[_Measure], order: list[int], starts: list[Fraction], tpb: int,
-          warnings: list[str]) -> list:
-    """Tempo, time and key signature events on the unrolled timeline."""
+          warnings: list[str], total: Fraction | None = None) -> list:
+    """Tempo, time and key signature events on the unrolled timeline. A played measure shorter than its time signature
+    (a pickup, the bar that completes it, a bar split at a repeat sign) gets a time signature of its own length, and the
+    real one again at the next measure: MIDI has no partial bars, and the app counts bars by time signature
+    (MidiFile.Build), so without it every later bar line would be off (docs/sheet-music.md)."""
     tempos: dict[int, float] = {}
     times: dict[int, tuple[int, int]] = {}
     keys: dict[int, str] = {}
@@ -653,6 +663,21 @@ def _meta(parts: list[_Part], merged: list[_Measure], order: list[int], starts: 
                     warnings.append(f"ignored tempo {bpm:g} in measure {mi + 1}")
         cur_time = times.get(tick0, cur_time)
         cur_key = keys.get(tick0, cur_key)
+    # Partial bars.
+    ends = list(starts[1:]) + ([total] if total is not None else [])
+    meter = None
+    for k, (t0, t1) in enumerate(zip(starts, ends)):
+        tick0 = round(t0 * tpb)
+        meter = times.get(tick0, meter)
+        if meter is None:
+            continue
+        nominal = Fraction(4 * meter[0], meter[1])
+        if 0 < t1 - t0 < nominal:
+            times[tick0] = partial_meter(t1 - t0, meter[1])
+            nxt = round(t1 * tpb)
+            if k + 1 < len(starts) and nxt not in times:
+                times[nxt] = meter
+            # Keep the real meter for what follows (times[tick0] is now the partial one).
     meta = []
     for tick, bpm in sorted(tempos.items()):
         meta.append((tick, mido.MetaMessage("set_tempo", tempo=int(round(mido.bpm2tempo(bpm))))))

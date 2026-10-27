@@ -126,3 +126,87 @@ def test_quantize_never_turns_a_fast_melody_into_chords():
         starts = [n.start for n in out if n.hand == "R"]
         assert len(starts) == len(set(starts)), f"level {level}: notes merged into chords"
         assert [n.pitch for n in out if n.hand == "R"] == pitches, f"level {level}: melody changed"
+
+
+def test_version_has_one_source(capsys):
+    """pyproject.toml holds the version; the package reads it from the install and the README installs that tag."""
+    import re
+    from pathlib import Path
+
+    import pytest
+
+    from pianopipe import __version__
+
+    root = Path(__file__).resolve().parents[1]
+    declared = re.search(r'^version = "([^"]+)"', (root / "pyproject.toml").read_text(encoding="utf-8"), re.M).group(1)
+    assert f"pianopipe@v{declared}" in (root / "README.md").read_text(encoding="utf-8")
+    assert not re.search(r'__version__ = "\d+\.\d', (root / "src" / "pianopipe" / "__init__.py").read_text(encoding="utf-8"))
+    with pytest.raises(SystemExit):
+        main(["--version"])
+    assert capsys.readouterr().out.strip() == f"pianopipe {__version__}"
+
+
+def test_tempo_map_matches_summing_the_spans():
+    from pianopipe.model import Song
+    from pianopipe.process import seconds_at, tempo_map
+
+    meta = [(0, mido.MetaMessage("set_tempo", tempo=600000)), (960, mido.MetaMessage("set_tempo", tempo=300000)),
+            (960, mido.MetaMessage("set_tempo", tempo=1000000)), (1440, mido.MetaMessage("time_signature"))]
+    song = Song(ticks_per_beat=480, meta=meta)
+    seconds = tempo_map(song)
+    assert seconds(0) == 0.0 and seconds(480) == 0.6 and seconds(960) == 1.2  # two beats at 0.6 s
+    assert seconds(1440) == 1.2 + 1.0  # the last tempo event at a tick wins
+    assert seconds(240) == seconds_at(song, 240) == 0.3
+    assert tempo_map(Song(ticks_per_beat=480))(480) == 0.5  # no tempo: 120 a minute
+
+
+def _band(tmp_path, extra=()):
+    rh, lh = two_hand_piece(2)
+    tracks = [
+        {"name": "Melody", "channel": 0, "program": 73, "notes": rh},  # flute
+        {"name": "Bass", "channel": 1, "program": 33, "notes": lh},  # electric bass (finger)
+        {"name": "Drums", "channel": 9, "program": 0, "notes": [(i * TPB, TPB // 2, 36) for i in range(8)]},
+        *extra,
+    ]
+    return midi_io.load(make_midi(tmp_path / "band.mid", tracks))
+
+
+def test_band_melody_and_bass_are_not_two_hands(tmp_path):
+    """A flute "Melody" and a bass guitar "Bass" are a band, not a pianist's hands: no track_names."""
+    part = pick_piano(_band(tmp_path))
+    assert part.hand_source == "none"
+    assert all(n.channel != 9 for n in part.notes)
+
+
+def test_band_with_a_piano_track_uses_only_the_piano(tmp_path):
+    piano = [(i * TPB, TPB, p) for i, p in enumerate((60, 64, 67, 72, 48, 52, 55, 60) * 2)]
+    part = pick_piano(_band(tmp_path, [{"name": "Piano", "channel": 2, "program": 0, "notes": piano}]))
+    assert {n.channel for n in part.notes} == {2} and len(part.notes) == len(piano)
+
+
+def test_band_with_two_named_piano_tracks_gets_track_names(tmp_path):
+    rh, lh = two_hand_piece(2)
+    extra = [{"name": "Piano RH", "channel": 3, "program": 0, "notes": rh},
+             {"name": "Piano LH", "channel": 4, "program": 1, "notes": lh}]
+    part = pick_piano(_band(tmp_path, extra))
+    assert part.hand_source == "track_names"
+    assert {n.channel for n in part.notes} == {3, 4}
+    assert {n.hand for n in part.notes if n.channel == 3} == {"R"} and {n.hand for n in part.notes if n.channel == 4} == {"L"}
+
+
+def test_gm_drum_channel_never_counts(tmp_path):
+    """Drums on channel 10 are dropped even when their track has a hand-like name and the default program."""
+    rh, lh = two_hand_piece(2)
+    tracks = [{"name": "Right Hand", "notes": rh}, {"name": "Left Hand", "channel": 1, "notes": lh},
+              {"name": "Bass Drum", "channel": 9, "notes": [(i * TPB, TPB // 2, 36) for i in range(8)]}]
+    part = pick_piano(midi_io.load(make_midi(tmp_path / "d.mid", tracks)))
+    assert part.hand_source == "track_names" and len(part.notes) == len(rh) + len(lh)
+
+
+def test_named_instruments_without_program_changes(tmp_path):
+    """Every track at the default program: a track named after another instrument isn't the piano."""
+    rh, lh = two_hand_piece(2)
+    tracks = [{"name": "Melody", "notes": rh}, {"name": "Bass", "channel": 1, "notes": lh},
+              {"name": "Guitar", "channel": 2, "notes": [(i * TPB, TPB, 64) for i in range(8)]}]
+    part = pick_piano(midi_io.load(make_midi(tmp_path / "g.mid", tracks)))
+    assert part.hand_source == "track_names" and {n.channel for n in part.notes} == {0, 1}

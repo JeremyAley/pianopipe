@@ -14,6 +14,7 @@ from pianopipe.quality import OFFICIAL
 from helpers import TPB, make_midi, two_hand_piece
 
 ROOT = Path(__file__).resolve().parents[2]
+DATA = Path(__file__).resolve().parents[1] / "data"  # pipeline/data here, data/ in the pianopipe repo
 
 
 def secs(tick):
@@ -82,7 +83,7 @@ def test_anchor_rule():
 
 
 def test_anchor_csv_follows_the_rule_and_names_catalog_pieces():
-    anchors = grading.load_anchors()
+    anchors = grading.load_anchors(DATA / "grade_anchors.csv")
     assert len(anchors) >= 26
     sources = ROOT / "data" / "catalog" / "sources.json"
     if not sources.exists():
@@ -107,7 +108,7 @@ def test_checked_in_model_is_small_and_positive():
     assert set(m.features) <= set(features.FEATURES)
     assert all(c > 0 for c in m.coef)
     assert m.fit["anchors"] >= 26 and m.fit["step2"]["nested_loo_mae"] < m.fit["step1"]["loo_mae"]
-    report = grading.REPORT_MD.read_text(encoding="utf-8")
+    report = (DATA / "grade_fit.md").read_text(encoding="utf-8")
     assert str(m.fit["step2"]["nested_loo_mae"]) in report and "PSyllabus" in report
 
 
@@ -270,6 +271,7 @@ def test_build_grades_every_level_and_uses_reference_for_anchors(tmp_path):
     entry = process_file(raw / "a.mid", tmp_path / "out", {"id": "a"}, anchors=anchors)
     assert [(lv.grade_source, lv.grade) for lv in entry.levels][-1] == ("reference", 1.5)
     assert all(lv.grade_source == "estimated" and lv.grade <= 1.5 for lv in entry.levels[:-1])
+    assert [lv.grade <= round(grading.REDUCED_SHARE[lv.level] * 1.5, 1) for lv in entry.levels[:-1]] == [True] * 3
     plain = process_file(raw / "a.mid", tmp_path / "out2", {"id": "a"}, grade_model=None, anchors={})
     assert all(lv.grade is None and lv.grade_source == "" for lv in plain.levels)
 
@@ -291,3 +293,22 @@ def test_cli_grade_fit_writes_model_and_report(tmp_path, capsys):
     assert "log_notes" in model.features
     assert "grade fit on 6 anchors" in capsys.readouterr().out
     assert "# Grade fit" in (tmp_path / "r.md").read_text(encoding="utf-8")
+
+
+def test_reduced_levels_are_capped_below_the_full_level():
+    assert grading.cap_reduced(1, 8.4, 9.0) == 4.5  # a melody-only level of a grade-9 piece
+    assert grading.cap_reduced(2, 2.0, 9.0) == 2.0  # a lower estimate stands
+    assert grading.cap_reduced(3, 9.0, 9.0) == 8.1
+    assert grading.cap_reduced(4, 9.0, 9.0) == 9.0
+
+
+def test_grade_tags_and_easiest_first_follow_the_full_grade():
+    from pianopipe.catalog import easiest_first_key, grade_tag
+
+    assert [grade_tag(g) for g in (0, 3.4, 3.5, 5.4, 5.5, 10)] == [
+        "beginner", "beginner", "intermediate", "intermediate", "advanced", "advanced"]
+    assert grade_tag(None, 4.0) == "beginner" and grade_tag(None, 6.6) == "advanced"
+    # A slow piece can be fast-looking-easy by difficulty and still high by grade (Moonlight's 1st movement).
+    song = lambda i, grade, diff: SongEntry(i, i, levels=[Level(4, "Full", "", "", 1, diff, grade=grade)])  # noqa: E731
+    songs = [song("moonlight", 8.5, 3.0), song("minuet", 2.0, 4.5), song("ungraded", None, 1.0), song("etude", 5.0, 7.0)]
+    assert [s.id for s in sorted(songs, key=easiest_first_key)] == ["minuet", "etude", "moonlight", "ungraded"]

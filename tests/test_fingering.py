@@ -133,3 +133,24 @@ def test_cli_eval_fingering(capsys):
     assert main(["eval-fingering"]) == 0
     out = capsys.readouterr().out
     assert "C major RH up, 2 oct" in out and "of notes" in out
+
+
+def _scale(fingers):
+    return [Note(i * TPB, (i + 1) * TPB, p, hand="R", finger=f) for i, (p, f) in enumerate(zip((60, 62, 64, 65, 67), fingers))]
+
+
+def test_printed_fingering_is_kept():
+    """A score's fingering (MusicXML <fingering>) pins those notes; the search fills in the others around it."""
+    free = [n.finger for n in assign_fingering(_scale([None] * 5), TPB)]
+    printed = [2, None, 4, None, None]  # not what the search picks on its own
+    assert free[0] != 2
+    out = [n.finger for n in assign_fingering(_scale(printed), TPB)]
+    assert out[0] == 2 and out[2] == 4 and all(out)
+
+
+def test_printed_fingering_that_doesnt_fit_is_dropped_there_only():
+    chord = [Note(0, TPB, 60, hand="R", finger=1), Note(0, TPB, 64, hand="R", finger=1)]  # one finger on two keys
+    tune = [Note((i + 1) * TPB, (i + 2) * TPB, p, hand="R", finger=f) for i, (p, f) in enumerate(((67, 3), (65, 2)))]
+    out = assign_fingering(chord + tune, TPB)
+    assert out[0].finger != out[1].finger
+    assert [n.finger for n in out[2:]] == [3, 2]

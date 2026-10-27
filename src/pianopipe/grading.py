@@ -1,9 +1,10 @@
 """Grades on our 0-10 scale (0 Initial, 1-8 grades, 9-10 diploma), calibrated on pieces with documented exam grades.
 
-data/grade_anchors.csv holds the anchors. `pianopipe grade-fit` measures how well the full level's `difficulty`
+An anchors CSV (the repository's pipeline/data/grade_anchors.csv) holds the anchors. `pianopipe grade-fit` measures how well the full level's `difficulty`
 alone predicts their grades (step 1: isotonic regression), then fits a small ridge model on cheap features
-(step 2, features.py), and writes the package's grade_model.json and data/grade_fit.md. Catalog builds only apply the
-stored model, so they stay deterministic. Pure Python (no numpy): 26 anchors and a handful of features.
+(step 2, features.py), and writes the model (the package's grade_model.json) and a report (pipeline/data/grade_fit.md).
+Catalog builds only apply the stored model, so they stay deterministic. Nothing here reads files outside the package
+unless given their path: the anchors and the report are arguments. Pure Python (no numpy): 26 anchors and a handful of features.
 """
 
 from __future__ import annotations
@@ -17,10 +18,7 @@ from pathlib import Path
 
 from .features import FEATURES
 
-DATA = Path(__file__).resolve().parents[2] / "data"
-ANCHORS_CSV = DATA / "grade_anchors.csv"
 MODEL_JSON = Path(__file__).with_name("grade_model.json")  # inside the package, so an installed pianopipe has it
-REPORT_MD = DATA / "grade_fit.md"
 RCM_TO_GRADE = {1: 1, 2: 1.5, 3: 2, 4: 3, 5: 4, 6: 4.5, 7: 5, 8: 6, 9: 7, 10: 8}
 RIDGE_GRID = (0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0)
 MAX_FEATURES = 4
@@ -31,6 +29,19 @@ MISPLACED = 1.5  # |predicted - reference| that counts as misplaced
 # extrapolated to 10, melody level included. Together they cost 0.07 grades of LOO MAE (0.59 -> 0.66; nested 0.65 -> 0.73); see
 # data/grade_fit.md, Limitations, for the alternatives tried.
 CAPS = {"log_notes": math.log(1500)}
+# The anchors are full pieces, so the model says nothing reliable about a reduced level: its estimate for a
+# melody-only level of a grade-9 piece came out at 8.4. A reduced level's grade is capped at this share of the full
+# level's grade (level -> share), and the model's own estimate is kept when it is lower. In the official catalog the
+# cap decides most reduced levels (about 55% of level 1, 60% of level 2 and 90% of level 3), so read those grades as
+# "about half (two thirds, nine tenths) as hard as the full piece", a ranking aid rather than a measurement. Leaving
+# them out isn't an option: the app picks a song's level by its grade.
+REDUCED_SHARE = {1: 0.5, 2: 0.7, 3: 0.9}
+
+
+def cap_reduced(level: int, estimate: float, full: float) -> float:
+    """A reduced level's grade: its estimate, but no more than REDUCED_SHARE of the full level's grade."""
+    share = REDUCED_SHARE.get(level)
+    return estimate if share is None else round(min(estimate, share * full), 1)
 
 
 def capped(feats: dict[str, float], caps: dict[str, float] = CAPS) -> dict[str, float]:
@@ -60,7 +71,7 @@ def anchor_grade(abrsm: float | None, trinity: float | None, rcm: int | None) ->
     return RCM_TO_GRADE.get(rcm) if rcm is not None else None
 
 
-def load_anchors(path: str | Path = ANCHORS_CSV) -> dict[str, Anchor]:
+def load_anchors(path: str | Path) -> dict[str, Anchor]:
     text = Path(path).read_text(encoding="utf-8")
     rows = csv.DictReader(io.StringIO("".join(l for l in text.splitlines(True) if not l.startswith("#"))))
     num = lambda v, t=float: t(v) if v.strip() else None  # noqa: E731
@@ -340,7 +351,7 @@ def anchor_rows(raw: str | Path, manifest: list[dict], anchors: dict[str, Anchor
 
 
 def report(res: FitResult, missing: list[str] = (), rcm_only: int | None = None) -> str:
-    """The human-readable fit report (data/grade_fit.md). `rcm_only`: anchors graded through the RCM concordance."""
+    """The human-readable fit report (pipeline/data/grade_fit.md). `rcm_only`: anchors graded through the RCM concordance."""
     s1, s2, m = res.step1, res.step2, res.model
     lines = [
         "# Grade fit",
@@ -431,7 +442,8 @@ def report(res: FitResult, missing: list[str] = (), rcm_only: int | None = None)
         "low (La Campanella 6.7, Moonlight 3rd movement 7.2), because nothing here sees speed and no anchor is above "
         "grade 8. More anchors (PSyllabus, below) are the real fix.",
         "- The grades are for the full arrangement. Reduced levels get the same model's estimate from their own notes, "
-        "which the anchors don't test.",
+        "which the anchors don't test, capped at a share of the full level's grade ("
+        + ", ".join(f"level {k}: {v:.0%}" for k, v in REDUCED_SHARE.items()) + "; grading.REDUCED_SHARE).",
         "- Next step: PSyllabus (CC BY 4.0, 7,901 pieces with levels from ABRSM, RCM, Trinity and others, "
         "https://doi.org/10.5281/zenodo.14794592) is the obvious bigger training set; keep these anchors as the check.",
         "",
@@ -468,9 +480,3 @@ def default_model() -> GradeModel | None:
     if "model" not in _DEFAULTS:
         _DEFAULTS["model"] = GradeModel.load() if MODEL_JSON.exists() else None
     return _DEFAULTS["model"]
-
-
-def default_anchors() -> dict[str, Anchor]:
-    if "anchors" not in _DEFAULTS:
-        _DEFAULTS["anchors"] = load_anchors() if ANCHORS_CSV.exists() else {}
-    return _DEFAULTS["anchors"]
