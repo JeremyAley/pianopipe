@@ -16,7 +16,7 @@ The same pipeline builds the public catalog ([quest-piano-catalog](https://githu
 ## Install
 
 ```bash
-pip install "git+https://github.com/JeremyAley/pianopipe@v0.3.0"
+pip install "git+https://github.com/JeremyAley/pianopipe@v0.4.0"
 ```
 
 Python 3.10 or later; the only dependency is [mido](https://github.com/mido/mido). `pianopipe --version` prints the installed version.

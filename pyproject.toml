@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pianopipe"
-version = "0.3.0"
+version = "0.4.0"
 description = "Piano MIDI in; difficulty levels, fingering, grades and catalog.json out (for Quest Piano Trainer)"
 readme = "README.md"
 license = "Apache-2.0"

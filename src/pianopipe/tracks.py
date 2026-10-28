@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from statistics import mean
+from statistics import mean, median
 
 from .model import Note, Song
 
 DRUM_CHANNEL = 9  # channel 10 in 1-based numbering
 PIANO_PROGRAMS = range(0, 8)  # GM programs 1-8 (0-based 0-7)
+SWAPPED_NAMES = 7  # semitones the "right" track's median pitch must sit below the "left" one's to swap the names
 
 # LilyPond exports name one track per voice after its staff: "up", "upII", "upA:", "down", "downIII:".
 _RIGHT = re.compile(r"\b(rh|right|r\.?h\.?|treble|upper|oben|droite)\b|right hand|\bmelody\b|^\s*up(I+|[A-D])?\s*:?\s*$", re.I)
@@ -83,6 +84,10 @@ def pick_piano(song: Song) -> PianoPart:
     named = {id(t): _hand_from_name(t.name) for t, _ in tracks}
     if len(tracks) >= 2 and all(named[id(t)] for t, _ in tracks) and len(set(named.values())) == 2:
         out = [n.with_hand(named[id(t)]) for t, notes in tracks for n in notes]
+        r, l = (median(n.pitch for n in out if n.hand == h) for h in "RL")
+        if r < l - SWAPPED_NAMES:
+            # Names the other way round from the music (Mutopia's Ungarische Melodie calls its treble track "left").
+            out = [n.with_hand("L" if n.hand == "R" else "R") for n in out]
         return PianoPart(sorted(out, key=lambda n: (n.start, n.pitch)), "track_names")
 
     if len(tracks) == 2:

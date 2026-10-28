@@ -59,8 +59,11 @@ def check(
     ticks_per_beat: int,
     seconds=lambda tick: 0.0,
     policy: GatePolicy | None = None,
+    repaired: list[int] = (),
 ) -> GateResult:
-    """Run every check on the full arrangement (`notes`, hands set) and its levels."""
+    """Run every check on the full arrangement (`notes`, hands set) and its levels. `repaired` are the ticks of chords
+    the file gave one hand unplayably, split between the hands (hands.repair_hands): they count towards
+    max_unplayable_share as written, so a file whose hands are wrong throughout is still skipped, and become warnings."""
     policy = policy or GatePolicy()
     result = GateResult()
     if hand_source not in policy.allowed_hand_sources:
@@ -94,9 +97,10 @@ def check(
         result.warnings.append(f"hands cross in {crossed} chords")
 
     flags = playability_flags(notes, ticks_per_beat)
-    if chords and len(flags) / len(chords) > policy.max_unplayable_share:
-        result.reasons.append(f"{len(flags)} of {len(chords)} chords can't be played by one hand")
+    if chords and (len(flags) + len(repaired)) / len(chords) > policy.max_unplayable_share:
+        result.reasons.append(f"{len(flags) + len(repaired)} of {len(chords)} chords can't be played by one hand as written")
     result.warnings += [f"{_clock(seconds(tick))} {text}" for tick, text in flags]
+    result.warnings += [f"{_clock(seconds(tick))} chord split between the hands to be playable" for tick in repaired]
 
     for level, level_notes in levels.items():
         if len(level_notes) < policy.min_level_notes:

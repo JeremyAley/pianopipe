@@ -7,7 +7,7 @@ from pianopipe.catalog import Catalog, validate
 from pianopipe.cli import main
 from pianopipe.difficulty import make_level
 from pianopipe.hands import hand_accuracy, playability_issues, split_hands
-from pianopipe.process import build_catalog, process_file
+from pianopipe.process import build_catalog, load_notes, process_file
 from pianopipe.tracks import pick_piano
 
 from helpers import TPB, make_midi, two_hand_piece
@@ -77,6 +77,30 @@ def test_playability_flags_big_chords():
     assert playability_issues(notes, TPB)
 
 
+def test_unplayable_chord_from_the_tracks_is_split(tmp_path):
+    # The right track's chord holds a low G2 (piano-midi.de's Moonlight Sonata): over two octaves in one press. The
+    # left hand, which plays C#2 there, takes it; the playable chords stay where the tracks put them.
+    rh = [(0, TPB, p) for p in (43, 64, 73)] + [(TPB, TPB, p) for p in (64, 68, 73)]
+    lh = [(0, 2 * TPB, 37), (TPB, TPB, 44)]
+    path = make_midi(tmp_path / "a.mid", [{"name": "Right", "notes": rh}, {"name": "Left", "notes": lh, "channel": 1}])
+    repaired = []
+    _, notes, hand_source, _ = load_notes(path, repaired=repaired)
+    assert hand_source == "track_names" and repaired == [0]
+    assert [(n.start, n.pitch) for n in notes if n.hand == "L"] == [(0, 37), (0, 43), (TPB, 44)]
+    assert playability_issues(notes, TPB) == []
+
+
+def test_a_key_struck_twice_at_once_is_one_note(tmp_path):
+    # Two voice tracks on a unison (Mutopia's Schubert impromptus D899/3 and 4): the key sounds once, the longer note.
+    rh = [(0, TPB, 72), (0, 2 * TPB, 67)]
+    inner = [(0, TPB, 67), (TPB, TPB, 64)]
+    lh = [(0, 2 * TPB, 48)]
+    path = make_midi(tmp_path / "a.mid", [{"name": "upA:", "notes": rh}, {"name": "upB:", "notes": inner, "channel": 1},
+                                          {"name": "down:", "notes": lh, "channel": 2}])
+    _, notes, _, _ = load_notes(path)
+    assert sorted((n.start, n.end, n.pitch) for n in notes if n.pitch == 67) == [(0, 2 * TPB, 67)]
+
+
 def test_levels_get_simpler(tmp_path):
     rh, lh = two_hand_piece(4)
     path = make_midi(tmp_path / "a.mid", [{"name": "Right", "notes": rh}, {"name": "Left", "notes": lh, "channel": 1}])
@@ -97,6 +121,17 @@ def test_process_writes_app_ready_files(tmp_path):
     mid = mido.MidiFile(str(tmp_path / "out" / "minuet-in-g" / "level4.mid"))
     names = [next((m.name for m in t if m.type == "track_name"), None) for t in mid.tracks]
     assert names == ["Conductor", "RH", "LH"]
+
+
+def test_printed_fingers_from_the_manifest_are_kept(tmp_path):
+    # A Mutopia MIDI file has no fingering; its LilyPond source's (tools/mutopia_fingering.py) comes in the manifest.
+    # The search alone gives the melody's C5 a 3 and the bass's G3 a 1; the source says 4 and 2.
+    rh, lh = two_hand_piece(2)
+    src = make_midi(tmp_path / "a.mid", [{"name": "Right", "notes": rh}, {"name": "Left", "notes": lh, "channel": 1}])
+    process_file(src, tmp_path / "out", {"id": "a", "fingers": [[TPB // 4, 55, 2], [0, 72, 4]]})
+    song = midi_io.load(tmp_path / "out" / "a" / "level4.mid")
+    fingers = {(n.start, n.pitch): n.finger for n in song.notes}
+    assert fingers[TPB // 4, 55] == 2 and fingers[0, 72] == 4
 
 
 def test_build_catalog_roundtrip_and_cli(tmp_path):

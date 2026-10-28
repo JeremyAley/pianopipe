@@ -96,6 +96,29 @@ def test_cross_staff_note_stays_with_its_voice(tmp_path):
     assert pitches(sc, "L") == [36]
 
 
+def test_cross_staff_chord_the_left_hand_cant_reach_goes_right(tmp_path):
+    # I See the Light (a MuseScore arrangement): a bass-staff voice writes C4 D4 on the treble staff over its C2. By
+    # voice that is one left-hand press over two octaves; the right hand, playing F4, takes them.
+    chord = note("C", 2, 4, 5, 2) + note("C", 4, 4, 5, 1).replace("<pitch>", "<chord/><pitch>") + \
+        note("D", 4, 4, 5, 1).replace("<pitch>", "<chord/><pitch>")
+    lh = chord + note("G", 2, 4, 5, 2) + note("E", 3, 4, 5, 2) + note("G", 2, 4, 5, 2)
+    rh = note("F", 4) + note("G", 4) + note("A", 4) + note("G", 4)
+    sc = musicxml.load(write(tmp_path, score([("Piano", [bar(rh, lh)])])))
+    assert pitches(sc, "L") == [36, 43, 52, 43]
+    assert pitches(sc, "R") == [60, 62, 65, 67, 69, 67]
+    assert sc.repaired == []  # a cross-staff note follows its staff without counting as a repair
+
+
+def test_cross_staff_melody_note_goes_to_the_hand_near_it(tmp_path):
+    # A bass-staff voice's note printed high on the treble staff between two low Cs: the right hand, a step away,
+    # plays it rather than the left hand leaping three octaves and back.
+    rh = note("E", 5) + rest() + note("E", 5) + note("F", 5)
+    lh = note("C", 2, 4, 5, 2) + note("D", 5, 4, 5, 1) + note("C", 2, 4, 5, 2) + note("C", 2, 4, 5, 2)
+    sc = musicxml.load(write(tmp_path, score([("Piano", [bar(rh, lh)])])))
+    assert pitches(sc, "R") == [76, 74, 76, 77]
+    assert pitches(sc, "L") == [36, 36, 36]
+
+
 def test_ties_merge_and_may_skip_a_note(tmp_path):
     rh = note("C", 4, 8) + note("C", 4, 8, 1, 1, '<tie type="start"/>')
     rh2 = note("C", 4, 8, 1, 1, '<tie type="stop"/>') + note("D", 4, 8)
@@ -246,7 +269,7 @@ def test_satb_parts_and_reach(tmp_path):
     p = write(tmp_path, score(parts, staves=1))
     sc = musicxml.load(p)
     assert sc.hand_source == "satb"
-    assert pitches(sc, "R") == [60, 64] and sorted(pitches(sc, "L")) == [36, 55]
+    assert pitches(sc, "R") == [55, 60, 64] and pitches(sc, "L") == [36]
     _, notes, hand_source, _ = load_notes(p)
     assert hand_source == "satb"
     assert sorted(n.pitch for n in notes if n.hand == "R") == [55, 60, 64]
@@ -277,6 +300,17 @@ def test_satb_flag_on_two_staff_hymn(tmp_path):
     _, notes, hand_source, _ = load_notes(path, satb=True)
     assert hand_source == "satb"
     assert sorted(n.pitch for n in notes if n.hand == "R") == [60, 64, 67]
+
+
+def test_satb_flag_on_a_two_staff_score_reaches_before_the_repair(tmp_path):
+    # The same hymn as a score: the SATB rule moves the tenor G3 up, and that isn't a repair the gate counts.
+    chord = lambda *ns: ns[0] + "".join(n.replace("<pitch>", "<chord/><pitch>") for n in ns[1:])  # noqa: E731
+    m = bar(chord(note("C", 4, 16), note("E", 4, 16)), chord(note("C", 2, 16, 5, 2), note("G", 3, 16, 5, 2)))
+    path = write(tmp_path, score([("Piano", [m])]))
+    repaired = []
+    _, notes, hand_source, _ = load_notes(path, satb=True, repaired=repaired)
+    assert hand_source == "satb" and repaired == []
+    assert sorted(n.pitch for n in notes if n.hand == "R") == [55, 60, 64]
 
 
 def test_process_file_end_to_end(tmp_path):

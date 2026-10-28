@@ -5,9 +5,11 @@ docs/catalog-expansion.md §2; in short:
 
 - Hands: a keyboard part's staff 1 is the right hand and staff 2 the left. A note belongs to the home staff of its
   voice (where most of the voice's notes are; MuseScore numbers staff 1's voices 1-4 and staff 2's 5-8), so
-  cross-staff notes stay with the hand that plays them. Two one-staff keyboard parts are right and left by pitch. Choir scores (soprano, alto, tenor, bass)
+  cross-staff notes stay with the hand that plays them, unless that hand would stretch past a tenth or leap away to
+  reach one (hands.repair_hands, which also splits chords one hand can't play). Two one-staff keyboard parts are right and left by pitch. Choir scores (soprano, alto, tenor, bass)
   use the SATB rule: soprano and alto to the right hand, tenor and bass to the left (hand_source "satb"; the tenor
-  is moved up where the left hand would span more than an octave by `satb.reach`, which process.load_notes runs).
+  is moved up where the left hand would span more than an octave by `satb.reach`; so is a two-staff hymn's with
+  `load(satb=True)`).
 - Repeats, voltas, D.C., D.S., To Coda and Fine are unrolled (no repeats after a jump), so the song is one timeline.
 - Ties merge on <tie> (playback), unisons within a hand become one note, grace notes take time from the previous
   note (acciaccatura) or the next one (appoggiatura).
@@ -28,7 +30,9 @@ from pathlib import Path
 
 import mido
 
+from .hands import repair_hands
 from .model import Note, Song, TrackInfo
+from .satb import reach
 
 SUFFIXES = (".musicxml", ".xml", ".mxl")
 TPB = 480
@@ -127,6 +131,9 @@ class Score:
     parts: list[str] = field(default_factory=list)  # part names, for reports
     warnings: list[str] = field(default_factory=list)
     bars: list[int] = field(default_factory=list)  # tick where each played (unrolled) measure starts, then the end
+    order: list[int] = field(default_factory=list)  # each played measure's written measure (0-based), in playing order
+    keyboard: str = ""  # id of the two-staff keyboard part the hands came from, if they came from one
+    repaired: list[int] = field(default_factory=list)  # ticks of chords split between the hands to be playable
 
     @property
     def notes(self) -> list[Note]:
@@ -406,12 +413,26 @@ def _credit(root: ET.Element, kind: str) -> str:
     return "; ".join(names)
 
 
+MEASURE_SLACK = Fraction(1, 16)  # a measure this close to its time signature's length is that long (tuplet rounding)
+
+
 def _unroll(parts: list[_Part], order: list[int]) -> tuple[list[Fraction], Fraction]:
-    """Start of each played measure (quarter notes) on the unrolled timeline, and the total length."""
+    """Start of each played measure (quarter notes) on the unrolled timeline, and the total length. A measure within
+    MEASURE_SLACK of its time signature's length counts as exactly that long: durations in divisions are rounded, so
+    a measure of odd tuplets can come out a hair over (Liszt's 961/480 quarters in 2/4), which would put every later bar
+    line off the score's."""
+    meters: list[Fraction | None] = []
+    cur = None
+    for i in range(max((len(p.measures) for p in parts), default=0)):
+        cur = next((p.measures[i].time for p in parts if i < len(p.measures) and p.measures[i].time), cur)
+        meters.append(Fraction(4 * cur[0], cur[1]) if cur else None)
     starts, t = [], Fraction(0)
     for mi in order:
         starts.append(t)
-        t += max((p.measures[mi].length for p in parts if mi < len(p.measures)), default=Fraction(0))
+        length = max((p.measures[mi].length for p in parts if mi < len(p.measures)), default=Fraction(0))
+        if meters[mi] is not None and 0 < abs(length - meters[mi]) <= MEASURE_SLACK:
+            length = meters[mi]
+        t += length
     return starts, t
 
 
@@ -507,7 +528,8 @@ def _voice_homes(part: _Part) -> dict[str, int]:
     return homes
 
 
-def load(path: str | Path) -> Score:
+def load(path: str | Path, satb: bool = False) -> Score:
+    """`satb`: the score is a four-part hymn or chorale on two staves (hand_source "satb", the tenor reach)."""
     root = read_root(path)
     info = _part_info(root)
     parts = [_parse_part(p, info.get(p.get("id", ""), {})) for p in root.findall("part")]
@@ -539,8 +561,11 @@ def load(path: str | Path) -> Score:
     keyboard = [p for p in parts if p.keyboard and not p.choir_voice]
     choir = [p for p in parts if p.choir_voice]
     events = _events(parts, order, starts)
-    hand_of: dict[int, object] = {}
-    satb = False
+    for e in events:
+        if 0 < e.end - total <= MEASURE_SLACK:  # the last measure snapped to its time signature: so does its last note
+            e.end = total
+    kp_id = ""
+    staff_hand = lambda e: None  # noqa: E731 - only a two-staff keyboard part has cross-staff notes
     if len(choir) >= 3 and {"S", "B"} <= {p.choir_voice for p in choir}:
         satb = True
         use = {parts.index(p): ("R" if p.choir_voice in ("S", "A") else "L") for p in choir}
@@ -551,12 +576,16 @@ def load(path: str | Path) -> Score:
         kp = next(p for p in keyboard if p.staves >= 2)
         pi = parts.index(kp)
         homes = _voice_homes(kp)
-        satb = bool(_CHOIR_PART.search(kp.name))
+        satb = satb or bool(_CHOIR_PART.search(kp.name))
+        kp_id = kp.id
 
         def hand(e: _Event, pi=pi, homes=homes):
             if e.part != pi:
                 return None
             return "R" if homes.get(e.voice, e.staff) == 1 else "L"
+
+        def staff_hand(e: _Event, pi=pi):
+            return None if e.part != pi else ("R" if e.staff == 1 else "L")
         others = [p.name or p.id for p in parts if p is not kp]
         if others:
             warnings.append(f"used the keyboard part {kp.name or kp.id!r}; left out {', '.join(others)}")
@@ -571,6 +600,7 @@ def load(path: str | Path) -> Score:
         hand = lambda e: "?"  # noqa: E731 - no structure to read hands from
     tpb = TPB
     notes: list[Note] = []
+    cross_staff: dict[tuple[int, int], str] = {}  # (start, pitch) -> the hand of the staff a cross-staff note is printed on
     for e in events:
         h = hand(e)
         if h is None:
@@ -579,9 +609,19 @@ def load(path: str | Path) -> Score:
             round(e.start * tpb), round(e.end * tpb), e.pitch, e.velocity, None if h == "?" else h,
             0 if h != "L" else 1, 0 if h != "L" else 1, 0, e.finger,
         ))
+        if h in ("R", "L") and staff_hand(e) not in (None, h):
+            cross_staff[notes[-1].start, e.pitch] = staff_hand(e)
     notes = [nt for nt in notes if nt.end > nt.start]
     hand_source = "none" if any(nt.hand is None for nt in notes) else ("satb" if satb else "staves")
     notes = merge_unisons(notes)
+    repaired: list[int] = []
+    if hand_source == "satb":
+        notes = reach(notes, tpb)  # before the repair, which would otherwise split what the SATB rule moves
+    if hand_source in ("staves", "satb"):
+        # The voice rule is a convention: a cross-staff note goes to its staff's hand where the voice's hand would
+        # stretch past a tenth or leap away to reach it, and a chord one hand can't play is split (§2.2).
+        notes = repair_hands(notes, tpb, [cross_staff.get((nt.start, nt.pitch), nt.hand) != nt.hand for nt in notes],
+                             repaired)
     song = Song(ticks_per_beat=tpb, meta=_meta(parts, merged, order, starts, tpb, warnings, total))
     song.tracks = [
         TrackInfo(0, "RH", sorted((x for x in notes if x.hand == "R"), key=lambda x: (x.start, x.pitch))),
@@ -590,7 +630,64 @@ def load(path: str | Path) -> Score:
     if hand_source == "none":
         song.tracks = [TrackInfo(0, "", sorted(notes, key=lambda x: (x.start, x.pitch)))]
     return Score(song, hand_source, title, _credit(root, "composer"), _credit(root, "arranger"),
-                 [p.name or p.id for p in parts], warnings, [round(t * tpb) for t in starts] + [round(total * tpb)])
+                 [p.name or p.id for p in parts], warnings, [round(t * tpb) for t in starts] + [round(total * tpb)],
+                 order, kp_id if hand_source == "staves" else "", repaired)
+
+
+# Elements dropped from a score engraved from its own notation: page layout and credits (the app's pages are laid out
+# afresh and show no header), and the other parts' entries.
+_LAYOUT = ("defaults", "credit", "identification", "work", "movement-number", "movement-title")
+
+
+def keyboard_notation(path: str | Path, part_id: str) -> str:
+    """The score's keyboard part alone, as MusicXML text for engraving its full level from the source's own notation
+    (docs/sheet-music.md §1.1): spelling, voices, slurs, dynamics, grace notes, repeats as written. Other parts, credits,
+    page and system breaks and layout, cue notes and metronome marks are left out; the part's name is hidden."""
+    root = read_root(path)
+    for tag in _LAYOUT:
+        for el in root.findall(tag):
+            root.remove(el)
+    part_list = root.find("part-list")
+    if part_list is not None:
+        for el in list(part_list):
+            if el.tag != "score-part" or el.get("id") != part_id:
+                part_list.remove(el)
+        sp = part_list.find("score-part")
+        if sp is not None:
+            for el in list(sp):
+                if el.tag not in ("part-name",):
+                    sp.remove(el)
+            name = sp.find("part-name")
+            if name is not None:
+                name.set("print-object", "no")
+    for part in root.findall("part"):
+        if part.get("id") != part_id:
+            root.remove(part)
+            continue
+        if any(_num(t.findtext("chromatic")) or _num(t.findtext("octave-change")) for t in part.iter("transpose")):
+            raise MusicXMLError("a transposing keyboard part")
+        for m in part.findall("measure"):
+            for el in m.findall("print"):
+                m.remove(el)
+            # Metronome marks: Verovio writes their note in the music font as text, which resvg draws as empty boxes.
+            for d in m.findall("direction"):
+                for dt in d.findall("direction-type"):
+                    if dt.find("metronome") is not None:
+                        d.remove(dt)
+                if d.find("direction-type") is None:
+                    m.remove(d)
+            # Cue notes aren't played (the level has none): their time stays as a <forward>.
+            for k, el in reversed(list(enumerate(m))):
+                if el.tag == "note" and el.find("cue") is not None:
+                    m.remove(el)
+                    if el.find("chord") is None and el.find("grace") is None:
+                        fwd = ET.Element("forward")
+                        ET.SubElement(fwd, "duration").text = el.findtext("duration") or "0"
+                        for tag in ("voice", "staff"):
+                            if el.find(tag) is not None:
+                                ET.SubElement(fwd, tag).text = el.findtext(tag)
+                        m.insert(k, fwd)
+    return ET.tostring(root, encoding="unicode")
 
 
 def merge_unisons(notes: list[Note]) -> list[Note]:
@@ -639,9 +736,10 @@ def partial_meter(length: Fraction, den: int) -> tuple[int, int]:
 def _meta(parts: list[_Part], merged: list[_Measure], order: list[int], starts: list[Fraction], tpb: int,
           warnings: list[str], total: Fraction | None = None) -> list:
     """Tempo, time and key signature events on the unrolled timeline. A played measure shorter than its time signature
-    (a pickup, the bar that completes it, a bar split at a repeat sign) gets a time signature of its own length, and the
-    real one again at the next measure: MIDI has no partial bars, and the app counts bars by time signature
-    (MidiFile.Build), so without it every later bar line would be off (docs/sheet-music.md)."""
+    (a pickup, the bar that completes it, a bar split at a repeat sign) or longer (a cadenza, an unmarked 5/4 bar in
+    4/4) gets a time signature of its own length, and the real one again at the next measure: MIDI has no partial bars,
+    and the app counts bars by time signature (MidiFile.Build), so without it every later bar line would be off
+    (docs/sheet-music.md)."""
     tempos: dict[int, float] = {}
     times: dict[int, tuple[int, int]] = {}
     keys: dict[int, str] = {}
@@ -672,7 +770,7 @@ def _meta(parts: list[_Part], merged: list[_Measure], order: list[int], starts: 
         if meter is None:
             continue
         nominal = Fraction(4 * meter[0], meter[1])
-        if 0 < t1 - t0 < nominal:
+        if 0 < t1 - t0 != nominal:
             times[tick0] = partial_meter(t1 - t0, meter[1])
             nxt = round(t1 * tpb)
             if k + 1 < len(starts) and nxt not in times:

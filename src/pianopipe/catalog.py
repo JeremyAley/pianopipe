@@ -255,8 +255,9 @@ def verify_sheet(path: Path, ref: dict) -> list[str]:
         return [f"sha256 does not match {ref['url']}"]
     data = json.loads(path.read_text(encoding="utf-8"))
     problems = []
-    if data.get("version") != 1:
-        problems.append(f"{ref['url']}: unsupported version {data.get('version')!r}")
+    version = data.get("version")
+    if version not in (1, 2):
+        problems.append(f"{ref['url']}: unsupported version {version!r}")
     pages = data.get("pages", [])
     if len(pages) != ref["pages"]:
         problems.append(f"{ref['url']}: {len(pages)} pages, the catalog says {ref['pages']}")
@@ -275,4 +276,12 @@ def verify_sheet(path: Path, ref: dict) -> list[str]:
         if m.get("bar") != i + 1 or not 0 <= m.get("system", -1) < systems:
             problems.append(f"{ref['url']}: measure {i + 1} is out of order or names a missing system")
             break
+        if len(m.get("onsets", [])) % 2 or len(m.get("notes", [])) % 4:
+            problems.append(f"{ref['url']}: measure {i + 1}: onsets come in pairs, notes in fours")
+            break
+    if version == 2:
+        # Repeats written once: each of the app's bars 1..bars is played by exactly one measure.
+        played = sorted(b for m in data.get("measures", []) for b in m.get("plays", []))
+        if played != list(range(1, int(data.get("bars", 0)) + 1)):
+            problems.append(f"{ref['url']}: the measures' plays don't cover bars 1-{data.get('bars')} once each")
     return problems

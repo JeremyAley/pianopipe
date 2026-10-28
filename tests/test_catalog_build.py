@@ -26,7 +26,7 @@ def sources(tmp_path):
     two_track(raw / "set" / "good.mid")
     make_midi(raw / "set" / "one_track.mid", [{"name": "Piano", "notes": rh + lh}])
     two_track(raw / "set" / "short.mid", bars=2)
-    # Hands swapped: the track named right plays the bass.
+    # Names swapped: the track named right plays the bass. pick_piano swaps them back, so this one builds.
     make_midi(raw / "set" / "swapped.mid", [{"name": "Right", "notes": lh}, {"name": "Left", "notes": rh, "channel": 1}])
     # Every beat an eight-note right-hand chord: no hand can play it.
     clusters = [(b * TPB, TPB, p) for b in range(40) for p in range(72, 80)]
@@ -44,17 +44,18 @@ def sources(tmp_path):
 def test_official_build_gates_files_and_reports_why(sources, tmp_path):
     raw, manifest = sources
     result = build_catalog(raw, tmp_path / "cat", "Test", manifest, OFFICIAL)
-    assert [s.id for s in result.catalog.songs] == ["good"]
+    assert [s.id for s in result.catalog.songs] == ["good", "swapped"]
     reasons = dict(result.skipped)
-    assert set(reasons) == {f"set/{n}.mid" for n in ("one_track", "short", "swapped", "clusters", "broken", "missing")}
+    assert set(reasons) == {f"set/{n}.mid" for n in ("one_track", "short", "clusters", "broken", "missing")}
     assert "hands not in the file's structure" in reasons["set/one_track.mid"]
     assert "too few notes" in reasons["set/short.mid"] and "too short" in reasons["set/short.mid"]
-    assert "hands swapped" in reasons["set/swapped.mid"]
     assert "can't be played by one hand" in reasons["set/clusters.mid"]
     assert reasons["set/broken.mid"].startswith("error:")
     assert "file missing" in reasons["set/missing.mid"]
     report = json.loads((tmp_path / "cat" / "build-report.json").read_text(encoding="utf-8"))
-    assert report["songs"] == 1 and report["levels"] == 4 and len(report["skipped"]) == 6
+    assert report["songs"] == 2 and report["levels"] == 8 and len(report["skipped"]) == 5
+    good, swapped = (tmp_path / "cat" / "songs" / i / "level4.mid" for i in ("good", "swapped"))
+    assert good.read_bytes() == swapped.read_bytes()
 
 
 def test_duplicate_ids_are_skipped_before_overwriting(tmp_path):

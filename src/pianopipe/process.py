@@ -6,14 +6,14 @@ import json
 import re
 import unicodedata
 from bisect import bisect_right
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import engrave, features, grading, leadsheet, midi_io, musicxml
 from .catalog import CHARACTERS, Catalog, Level, SheetRef, SongEntry, easiest_first_key, grade_tag, sha256_file
 from .difficulty import LEVELS, difficulty_score, make_levels
 from .fingering import assign_fingering
-from .hands import split_hands
+from .hands import repair_hands, split_hands
 from .model import Song
 from .quality import GatePolicy, QualityError, check
 from .satb import reach
@@ -50,17 +50,21 @@ def seconds_at(song: Song, tick: int) -> float:
     return tempo_map(song)(tick)
 
 
-def load_notes(src: str | Path, satb: bool = False):
+def load_notes(src: str | Path, satb: bool = False, repaired: list[int] | None = None):
     """Read a MIDI or MusicXML file's piano part with hands: (song, notes, hand_source, seconds(tick)).
 
     MusicXML hands come from the staves (musicxml.py); MIDI hands from track names, tracks or channels (tracks.py);
     an ABC lead sheet (a house arrangement) has the melody in the right hand and a generated left hand (leadsheet.py).
     With `satb` (a four-part hymn or chorale on two staves), or when the file's parts are a choir, the SATB rule's
-    reach step moves the tenor to the right hand where the left hand would stretch past an octave."""
+    reach step moves the tenor to the right hand where the left hand would stretch past an octave.
+    Hands from the file's structure are repaired where a chord is unplayable (hands.repair_hands); `repaired` gets the
+    tick of each chord that was split, which the quality gate counts as unplayable as written."""
     suffix = Path(src).suffix.lower()
     if suffix in musicxml.SUFFIXES:
-        score = musicxml.load(src)
+        score = musicxml.load(src, satb=satb)
         song, notes, hand_source = score.song, score.notes, score.hand_source
+        if repaired is not None:
+            repaired += score.repaired
     elif suffix in leadsheet.SUFFIXES:
         song, _ = leadsheet.load(src)
         notes, hand_source = song.notes, "leadsheet"
@@ -71,9 +75,16 @@ def load_notes(src: str | Path, satb: bool = False):
     if hand_source == "none":
         notes = split_hands(notes, song.ticks_per_beat)
         hand_source = "auto"
+    elif suffix in musicxml.SUFFIXES:
+        pass  # musicxml.load ran the SATB reach and the repair
     elif satb or hand_source == "satb":
         notes = reach(notes, song.ticks_per_beat)
         hand_source = "satb"
+    if suffix not in musicxml.SUFFIXES and hand_source in ("track_names", "two_tracks", "two_channels", "satb"):
+        # A MIDI file's tracks can strike one key twice at once (two voices on a unison) and give one hand a chord
+        # past a tenth (a staff's notes the other hand takes): one note per key, and the fewest notes moved to make
+        # every chord playable. A score's staves get the same in musicxml.load.
+        notes = repair_hands(musicxml.merge_unisons(notes), song.ticks_per_beat, repaired=repaired)
 
     return song, notes, hand_source, tempo_map(song)
 
@@ -95,7 +106,8 @@ def process_file(
     """Process one MIDI file into out_dir/<id>/level<N>.mid and return its catalog entry.
 
     `meta` may hold id, title, full_title, composer, license, attribution, source_url, era, tags, character (which
-    overrides the computed one) and satb (true for a four-part hymn setting: see load_notes).
+    overrides the computed one), satb (true for a four-part hymn setting: see load_notes) and fingers (the source's
+    printed fingering for a file that can't carry it, as [[tick, pitch, finger], ...]: tools/mutopia_fingering.py).
     `base_url` is prepended to level file paths in the entry (relative to catalog.json).
     With a `policy`, the quality gate runs before anything is written and a failing song raises QualityError;
     without one, only its warnings are kept. With `fingering`, every level's notes get fingers (fingering.py).
@@ -111,16 +123,21 @@ def process_file(
     src = Path(src)
     meta = dict(meta or {})
     song_id = meta.pop("id", None) or slugify(src.stem)
-    song, notes, hand_source, seconds = load_notes(src, satb=bool(meta.pop("satb", False)))
+    repaired: list[int] = []
+    song, notes, hand_source, seconds = load_notes(src, satb=bool(meta.pop("satb", False)), repaired=repaired)
     if not notes:
         raise QualityError(["no playable notes"])
+    # Printed fingers are kept by assign_fingering where they fit, as a score's are.
+    given = {(t, p): f for t, p, f in meta.pop("fingers", ())}
+    notes = [replace(n, finger=given[n.start, n.pitch]) if n.finger is None and (n.start, n.pitch) in given else n
+             for n in notes]
     if grade_model is _DEFAULT:
         grade_model = grading.default_model()
     tpb = song.ticks_per_beat
 
     duration_s = round(seconds(max(n.end for n in notes)), 2)
     levels = make_levels(notes, song.ticks_per_beat, song.meta)
-    gate = check(notes, levels, hand_source, duration_s, song.ticks_per_beat, seconds, policy or GatePolicy())
+    gate = check(notes, levels, hand_source, duration_s, song.ticks_per_beat, seconds, policy or GatePolicy(), repaired)
     if policy is not None and not gate.ok:
         raise QualityError(gate.reasons)
 
@@ -154,8 +171,17 @@ def process_file(
             difficulties[level], fingering, tempo_bpm=tempo, skills=features.skills(level_notes, seconds, tpb, song.meta),
         )
         if sheets:
-            sheet = engrave.engrave(path, song_dir, f"level{level}", level, entry.title)
-            lv.sheet = SheetRef(f"{base_url}{song_id}/level{level}.sheet.json", sheet.sha256, sheet.pages)
+            # A level that can't be engraved (too many pages for the book, Verovio failing) keeps its MIDI and plays
+            # without sheet music; it used to drop the whole song from the catalog.
+            # The full level of a MusicXML score shows the score's own notation where its bars line up (engrave.py).
+            score = src if level == max(levels) and src.suffix.lower() in musicxml.SUFFIXES and hand_source == "staves" else None
+            try:
+                sheet = engrave.engrave(path, song_dir, f"level{level}", level, entry.title, source=score)
+                lv.sheet = SheetRef(f"{base_url}{song_id}/level{level}.sheet.json", sheet.sha256, sheet.pages)
+                if sheet.note:
+                    entry.warnings.append(f"level {level}: sheet music from the level, not the score ({sheet.note})")
+            except Exception as exc:  # noqa: BLE001 - any engraving failure is the sheet's, not the song's
+                entry.warnings.append(f"level {level}: no sheet music ({exc})")
         if anchors and song_id in anchors and level == max(levels):
             lv.grade, lv.grade_source = anchors[song_id].grade, "reference"
         elif grade_model is not None:
