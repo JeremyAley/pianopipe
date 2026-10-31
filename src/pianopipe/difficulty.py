@@ -27,6 +27,7 @@ from dataclasses import replace
 
 from . import features, notation
 from .hands import group_chords
+from .melody import top_line
 from .model import Note
 
 LEVELS = {1: "Melody", 2: "Melody + bass", 3: "Simplified", 4: "Full"}
@@ -424,6 +425,33 @@ def _sung(tune: list[Note], bars: list[tuple[int, int]], tpb: int) -> list[tuple
     return out
 
 
+PEDAL_NOTES = 3  # a stretch of the piano's stand-in line this long or longer on one pitch class is a pedal (_under_pedal)
+
+
+def _under_pedal(line: list[Note], notes: list[Note], spans: list[tuple[int, int]], tpb: int) -> list[Note]:
+    """The piano's stand-in line (make_level's `tune` fallback), with each stretch between the voice's spans that
+    only ever plays one pitch class (PEDAL_NOTES or more: a figure's top note, like Go The Distance's intro, D6 over
+    D5 A5 D5 sixteenths) replaced by the top line of the notes under it that last a quarter or longer from middle C
+    up, in their own hands: there, the left hand's B4 A4 F#4 chords, the song's hook. With none, level 1 rests."""
+    firsts = sorted(a for a, _ in spans)
+    stretches: dict[int, list[Note]] = {}
+    for n in line:
+        stretches.setdefault(bisect_right(firsts, n.start), []).append(n)
+    end = max(n.end for n in notes)
+    out: list[Note] = []
+    for k, stretch in stretches.items():
+        if len(stretch) < PEDAL_NOTES or len({n.pitch % 12 for n in stretch}) > 1:
+            out += stretch
+            continue
+        a, b = min(n.start for n in stretch), firsts[k] if k < len(firsts) else end
+        # Held into the stretch too (from where it starts); then its top line (melody.top_line: a note under one
+        # still held is left out, and a held note gives way where a higher one starts).
+        held = [replace(n, start=max(n.start, a)) for n in notes
+                if n.start < b and n.end > a + tpb // 8 and n.duration >= tpb and n.pitch >= 60]
+        out += [replace(n, end=min(n.end, b)) for n in top_line(held, tpb)]
+    return out
+
+
 def _held_figure(line: list[Note], notes: list[Note], tpb: int, meta, spans: list[tuple[int, int]]) -> list[Note]:
     """The piano's line where it stands in for a voice part (make_level's `tune`), with a pitch it repeats at each
     beat of a figure (the hand strikes two notes or more between the repeats) held instead, once a bar and never
@@ -478,7 +506,8 @@ def make_level(notes: list[Note], level: int, ticks_per_beat: int, meta=(), tune
                     a = max(a, sb)
                 if n.end - a >= tpb // 8 or (a == n.start and n.end > a):
                     kept.append(replace(n, start=a) if a != n.start else n)
-            line = sorted(_held_figure(kept, notes, tpb, meta, spans) +[replace(n, hand="R") for n in tune[0]],
+            kept = _under_pedal(kept, notes, spans, tpb) if kept else kept
+            line = sorted(_held_figure(kept, notes, tpb, meta, spans) + [replace(n, hand="R") for n in tune[0]],
                           key=lambda n: (n.start, n.pitch))
         if level == 1:
             return _quantize(line, tpb // 2)

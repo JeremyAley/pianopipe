@@ -11,7 +11,9 @@ flags, dots and rests are music-font glyphs at exact positions. So every pitch c
   key signature, and accidentals carried through the bar; a head between the staves belongs to the staff whose
   ledger lines reach it; notes under an 8va line sound an octave up;
 - a chord is the heads on one stem; its value comes from the head, beams (filled shapes), flags, dots and tuplets;
-- ties are curves between two heads of the same pitch.
+- ties are curves between two heads of the same pitch;
+- each bar also keeps the segno and coda signs and the words printed over, under or beside it (pdf_songs reads the
+  jumps and the tempo from them).
 
 pdf_check.py compares an OMR export with this bar by bar and rewrites bars from it; see docs/catalog-expansion.md
 §3.2. Needs pymupdf (the [omr] extra).
@@ -42,6 +44,8 @@ SONATA = {
     "≈": ("rest", Fraction(1, 4)), "®": ("rest", Fraction(1, 8)),
     "-": ("ledger", None),
     **{str(d): ("time", d) for d in range(10)}, "c": ("time", "common"), "C": ("time", "cut"),
+    # the coda sign is byte 0xDE: Þ as Windows reads it, ﬁ as Mac Roman does (Opus's private use area)
+    "%": ("sign", "segno"), "Þ": ("sign", "coda"), "ﬁ": ("sign", "coda"),
 }
 SONATA_SPECIAL = {".": ("dot", None), "™": ("dot", None),  # also read from the fonts' "Special" companions
                   "“": ("ottava", "8"), "”": ("ottava", "va"), "‘": ("ottava", "vb")}  # Opus Special's 8va / 8vb
@@ -57,6 +61,7 @@ SMUFL = {
     0xE4E3: ("rest", Fraction(4)), 0xE4E4: ("rest", Fraction(2)), 0xE4E5: ("rest", Fraction(1)),
     0xE4E6: ("rest", Fraction(1, 2)), 0xE4E7: ("rest", Fraction(1, 4)), 0xE4E8: ("rest", Fraction(1, 8)),
     0xE022: ("ledger", None),
+    0xE047: ("sign", "segno"), 0xE048: ("sign", "coda"), 0xE049: ("sign", "coda"),
     **{0xE880 + d: ("tuplet", d) for d in range(10)},
     **{0xE080 + d: ("time", d) for d in range(10)}, 0xE08A: ("time", "common"), 0xE08B: ("time", "cut"),
 }
@@ -73,7 +78,7 @@ GRACE_SIZE = 0.8  # heads smaller than this share of the page's usual head are g
 
 @dataclass
 class Glyph:
-    kind: str  # head, rest, clef, acc, dot, flag, ledger, tuplet, time
+    kind: str  # head, rest, clef, acc, dot, flag, ledger, tuplet, time, sign (segno, coda)
     value: object
     x0: float
     x1: float
@@ -169,6 +174,8 @@ class Bar:
     graces: list[Grace] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)  # what makes its timing unsafe to read
     time: tuple[int, int] | None = None  # a time signature printed in it: (beats, beat type)
+    signs: list[str] = field(default_factory=list)  # segno and coda signs over it, left to right
+    words: list[str] = field(default_factory=list)  # text over, under or beside it (directions, lyrics), in order
 
 
 @dataclass
@@ -561,17 +568,56 @@ def read(path: str | Path) -> PdfScore:
         for g in glyphs:
             g.grace = g.kind in ("head", "flag") and g.size < GRACE_SIZE * usual
         octaves = _octave_lines(raw.words, raw.hlines, staves)
-        for upper, lower, xs in pairs:
+        marks = _marks(glyphs, raw.words)
+        for k, (upper, lower, xs) in enumerate(pairs):
             upper.index, lower.index = 1, 2
             score.systems.append(len(score.bars))
-            _read_system(score, state, pno, upper, lower, xs, glyphs, raw, octaves, ids)
+            # the system's marks: below the piano system above it (in the same column) down to just under its bass
+            ceiling = max((lo.bottom + 3 * lo.space for up, lo, _ in pairs[:k]
+                           if lo.bottom < upper.top and min(lo.x1, upper.x1) - max(lo.x0, upper.x0) > 40), default=0.0)
+            _read_system(score, state, pno, upper, lower, xs, glyphs, raw, octaves, ids,
+                         [mk for mk in marks if ceiling < mk[1] <= lower.bottom + 3 * lower.space])
     if not score.bars:
         score.warnings.append("no piano staves found: not a vector PDF of notation")
     return score
 
 
+END_WORDS = re.compile(r"^(d\.?\s?[sc%]\.?|dal\s+segno|da\s+capo|to\s+coda|fine)(\W|$)", re.I)
+SIGN_CHARS = {"": "segno", "": "coda", "": "coda"}  # SMuFL, also in text fonts (Bravura Text)
+
+
+def _marks(glyphs: list[Glyph], words) -> list[tuple[str, float, float, float, bool]]:
+    """Signs and words on a page as (text or sign, y, x0, x1, is a sign). A sign drawn inside a line of text is part
+    of it: "D." and a segno is "D.%", "To" and a coda sign is "To Coda"; beside the heading "Coda" it stays a sign."""
+    signs = [(g.value, g.x0, g.x1, g.y, g.size) for g in glyphs if g.kind == "sign"]
+    texts: list[list] = []
+    for text, x0, y0, x1, y1, _ in sorted(words, key=lambda w: w[1]):
+        if text in SIGN_CHARS:  # a sign set in a text font
+            signs.append((SIGN_CHARS[text], x0, x1, y1, y1 - y0))
+            continue
+        text = "".join({"segno": "%", "coda": " Coda"}.get(SIGN_CHARS.get(c), c) for c in text)
+        h = y1 - y0
+        prev = next((t for t in reversed(texts) if abs((t[2] + t[4]) / 2 - (y0 + y1) / 2) < 0.3 * h
+                     and -0.1 * h <= x0 - t[3] < 0.6 * h), None)
+        if prev is not None:  # one line of text set in several pieces
+            prev[0] += (" " if x0 - prev[3] > 0.15 * h else "") + text
+            prev[3], prev[2], prev[4] = x1, min(prev[2], y0), max(prev[4], y1)
+        else:
+            texts.append([text, x0, y0, x1, y1])
+    out, used = [], set()
+    for text, x0, y0, x1, y1 in texts:
+        if re.search(r"(\bd\.|\bto|\bal|\bcoda)\W*$", text, re.I) and not re.fullmatch(r"\W*coda\W*", text, re.I):
+            for k, (value, gx0, gx1, gy, size) in enumerate(signs):
+                if k not in used and y0 - 0.3 * size <= gy <= y1 + 0.5 * size and -0.6 * size <= gx0 - x1 <= 0.6 * size:
+                    text, x1 = text + ("%" if value == "segno" else " Coda"), gx1
+                    used.add(k)
+        out.append((text, (y0 + y1) / 2, x0, x1, False))
+    out += [(value, gy - size / 2, gx0, gx1, True) for k, (value, gx0, gx1, gy, size) in enumerate(signs) if k not in used]
+    return out
+
+
 def _read_system(score: PdfScore, state: _State, pno: int, upper: Staff, lower: Staff, xs: list[float],
-                 glyphs: list[Glyph], raw: _Page, octaves, ids) -> None:
+                 glyphs: list[Glyph], raw: _Page, octaves, ids, marks=()) -> None:
     sp = upper.space
     left, right = xs[0], xs[-1]
     mine = [g for g in glyphs if g.staff in (upper, lower) and left - 0.5 * sp <= g.x0 <= right + 0.5 * sp]
@@ -654,6 +700,14 @@ def _read_system(score: PdfScore, state: _State, pno: int, upper: Staff, lower: 
                 on[0].measure_rest = True
         m.chords.sort(key=lambda c: (c.x, c.staff))
         score.bars.append(bar)
+    mine_bars = [b for b in score.bars if b.system == len(score.systems) - 1]
+    for text, y, x0, x1, sign in sorted(marks, key=lambda mk: (mk[1] // (2 * sp), mk[2])):
+        if not mine_bars or x1 < left - 6 * sp or x0 > right + sp:
+            continue
+        # jumps at a bar's end (D.S., To Coda, Fine) end at or just past its barline; the rest start in their bar
+        at = (x0 + x1) / 2 if sign or END_WORDS.match(text) else x0
+        bar = next((b for b in mine_bars if at < b.measure.right), mine_bars[-1])
+        (bar.signs if sign else bar.words).append(text)
 
 
 def _joined(vlines: list[tuple[float, float, float]]) -> list[tuple[float, float, float]]:

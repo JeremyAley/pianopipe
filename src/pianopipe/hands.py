@@ -8,6 +8,9 @@ replace this later behind the same split_hands() interface.
 
 The same costs repair hands read from a file's structure (repair_hands): chords one hand can't play, and a score's
 cross-staff notes (docs/catalog-expansion.md §2.2).
+
+Both end with a playability pass over what each hand holds as well as strikes (playable_hands): a hand stretching
+past a tenth to keep a key down, or the left hand inside the right; the given hands stay wherever they're playable.
 """
 
 from __future__ import annotations
@@ -96,7 +99,7 @@ def split_hands(notes: list[Note], ticks_per_beat: int = 480) -> list[Note]:
     out: list[Note] = []
     for chord, k in zip(chords, splits):
         out.extend(n.with_hand("L" if idx < k else "R") for idx, n in enumerate(chord))
-    return out
+    return playable_hands(out, ticks_per_beat)  # chords alone don't show a hand holding a key the other plays under
 
 
 W_STAFF = 2.0  # a score's cross-staff note given to the hand of the staff it's printed on instead of its voice's
@@ -144,14 +147,15 @@ def repair_hands(notes: list[Note], ticks_per_beat: int = 480, cross_staff: list
     it; and, only in a chord none of those makes playable, each playable split into a lower left and an upper right
     hand (W_REPAIR for each other note moved). A chord no split makes playable keeps the file's hands (the gate counts
     it). `repaired` gets the start tick of each chord where a note the file placed was moved. A moved note loses its
-    printed finger, which was for the other hand."""
+    printed finger, which was for the other hand. Then playable_hands, for what the hands hold as well as strike
+    (its moves aren't `repaired`: the gate's count is of chords one hand can't strike)."""
     if not notes:
         return []
     free_of = {id(n): bool(f) for n, f in zip(notes, cross_staff or [False] * len(notes))}
     chords = group_chords(notes, window=max(1, ticks_per_beat // 32))
     cands = [_chord_candidates(c, [free_of[id(n)] for n in c]) for c in chords]
     if all(len(c) == 1 for c in cands):
-        return list(notes)
+        return playable_hands(list(notes), ticks_per_beat)
 
     trellis: list[list[_State]] = []
     prev = [_State(0.0, -1, RH_HOME, LH_HOME)]
@@ -186,7 +190,147 @@ def repair_hands(notes: list[Note], ticks_per_beat: int = 480, cross_staff: list
             repaired.append(chord[0].start)
         for n, h in zip(chord, hands):
             hand_of[id(n)] = h
-    return [n if hand_of[id(n)] == n.hand else replace(n, hand=hand_of[id(n)], finger=None) for n in notes]
+    notes = [n if hand_of[id(n)] == n.hand else replace(n, hand=hand_of[id(n)], finger=None) for n in notes]
+    return playable_hands(notes, ticks_per_beat)
+
+
+# playable_hands
+W_HELD_REACH = 2.0  # each onset a hand's reach (keys struck and held from just before) spans past HARD_SPAN
+W_HELD_SEMI = 0.1  # and per semitone past it (a tie-break: a move that only narrows the stretch doesn't pay)
+W_CROWD = 2.0  # per key past MAX_NOTES_PER_HAND in a hand's reach
+W_CROSSED = 3.0  # each onset the left hand's extent reaches above the right's by more than CROSS_SLACK
+W_CROSSED_SEMI = 0.25  # per semitone of that overlap
+CROSS_SLACK = 4  # semitones the hands may overlap: interlocked chords, the left thumb up to a third over the right
+W_MOVED = 2.5  # each note moved off its given hand
+W_SWAPPED = 1.0  # each note of a passage whose hands are swapped as a whole (one decision, not one per note)
+W_STRUCK = INF  # a chord struck at once that one hand can't play: a move never makes one
+
+
+def playable_hands(notes: list[Note], ticks_per_beat: int = 480, moved: list[int] | None = None) -> list[Note]:
+    """Notes with the hands they're given where those are playable, and moved to the other hand where they aren't,
+    counting the notes each hand still holds (repair_hands and split_hands look only at what's struck together).
+
+    At each onset, per hand: its reach is what it strikes plus what it struck a 16th or less before and still holds
+    (a grace note into its chord, a quick roll); a key held longer can be let go under the pedal (a bass note under
+    the hand's arpeggio, a rolled chord under its run). A reach past a tenth (HARD_SPAN) costs W_HELD_REACH, past five
+    keys W_CROWD a key. Its extent is the reach plus, while it strikes, every key it still holds, as the highway draws
+    them, since a hand that keeps playing is still over them: where the left hand's extent
+    reaches more than CROSS_SLACK above the right's lowest note, W_CROSSED (the left hand inside the right, or over
+    it while the right is playing there; OMR files left-hand notes on the treble staff that way).
+    A local search moves notes, each for its whole length, W_MOVED each: at each onset that costs something it
+    tries every single note sounding, every split of them into a lower left and an upper right hand, and swapping
+    the hands through the run of costly onsets around it (a passage the left hand plays over the right, one note
+    each in turn), and keeps the move that saves the most, until none saves anything. So the given hands win
+    wherever they're playable, and where they aren't, the fewest notes move. `moved` gets each moved note's start
+    tick. A moved note loses its printed finger, which was for the other hand."""
+    if not notes:
+        return []
+    tpb = ticks_per_beat
+    grace = max(1, tpb // 8)  # a note let go within a 32nd of the next onset is legato, not held
+    together = tpb // 4  # notes struck within a 16th are one handful: a grace note into its chord, a quick roll
+    order = sorted(range(len(notes)), key=lambda i: (notes[i].start, notes[i].pitch))
+    window = max(1, tpb // 32)
+    onsets: list[list[int]] = []  # note indices struck at each onset (group_chords' grouping)
+    for i in order:
+        if onsets and notes[i].start - notes[onsets[-1][0]].start <= window:
+            onsets[-1].append(i)
+        else:
+            onsets.append([i])
+    times = [notes[o[0]].start for o in onsets]
+    first = {i: k for k, o in enumerate(onsets) for i in o}
+    held: list[list[int]] = [[] for _ in onsets]  # notes struck at an earlier onset and still down at this one
+    counts_at: list[list[int]] = [[] for _ in notes]  # the onsets each note sounds at
+    for i in range(len(notes)):
+        counts_at[i].append(first[i])
+        k = first[i] + 1
+        while k < len(onsets) and notes[i].end - times[k] > grace:
+            held[k].append(i)
+            counts_at[i].append(k)
+            k += 1
+    hand = [n.hand for n in notes]
+    given = list(hand)
+
+    def position(k: int, h: str) -> tuple[list[int], list[int], list[int]]:
+        """(struck, reach: and the keys held since just before, extent: and every key held while the hand plays)."""
+        struck = [notes[i].pitch for i in onsets[k] if hand[i] == h]
+        mine = [i for i in held[k] if hand[i] == h]
+        reach = struck + [notes[i].pitch for i in mine if times[k] - notes[i].start <= together]
+        return struck, reach, (struck + [notes[i].pitch for i in mine]) if struck else reach
+
+    def cost(k: int) -> float:
+        total = 0.0
+        pos = {}
+        for h in "RL":
+            struck, p, pos[h] = position(k, h)
+            if not p:
+                continue
+            if len(struck) > MAX_NOTES_PER_HAND or max(struck, default=0) - min(struck, default=0) > HARD_SPAN:
+                total += W_STRUCK
+            if max(p) - min(p) > HARD_SPAN:
+                total += W_HELD_REACH + (max(p) - min(p) - HARD_SPAN) * W_HELD_SEMI
+            total += max(0, len(set(p)) - MAX_NOTES_PER_HAND) * W_CROWD
+        if pos["R"] and pos["L"] and max(pos["L"]) - min(pos["R"]) > CROSS_SLACK:
+            total += W_CROSSED + (max(pos["L"]) - min(pos["R"])) * W_CROSSED_SEMI
+        return total
+
+    costs = [cost(k) for k in range(len(onsets))]
+    other = {"R": "L", "L": "R"}
+    price = [W_MOVED] * len(notes)  # what each note costs off its given hand: W_SWAPPED once a passage swap moved it
+
+    def try_move(flip: tuple[int, ...], each: float | None = None) -> float:
+        """Saving (positive: better) from moving the `flip` notes to the other hand, at `each` a note if given (a
+        passage swap); they're moved back after."""
+        affected = {k for i in flip for k in counts_at[i]}
+        before = sum(costs[k] for k in affected) + sum(price[i] for i in flip if hand[i] != given[i])
+        for i in flip:
+            hand[i] = other[hand[i]]
+        after = sum(cost(k) for k in affected) + sum(each or price[i] for i in flip if hand[i] != given[i])
+        for i in flip:
+            hand[i] = other[hand[i]]
+        return before - after
+
+    todo = [k for k, c in enumerate(costs) if c > 0]
+    budget = 20 * len(onsets)
+    while todo and budget > 0:
+        budget -= 1
+        k = todo.pop()
+        if costs[k] <= 0:
+            continue
+        sounding = sorted(set(onsets[k] + held[k]), key=lambda i: notes[i].pitch)
+        candidates: dict[tuple[int, ...], float | None] = {(i,): None for i in sounding}
+        for s in range(len(sounding) + 1):
+            flip = tuple(i for j, i in enumerate(sounding) if hand[i] != ("L" if j < s else "R"))
+            if flip:
+                candidates[flip] = None
+        a, b = k, k  # the run of costly onsets around this one, a beat or less apart, its hands swapped as a whole
+        j = k - 1
+        while j >= 0 and times[a] - times[j] <= tpb:
+            a = j if costs[j] > 0 else a
+            j -= 1
+        j = k + 1
+        while j < len(onsets) and times[j] - times[b] <= tpb:
+            b = j if costs[j] > 0 else b
+            j += 1
+        if b > a:
+            candidates[tuple(i for o in onsets[a:b + 1] for i in o)] = W_SWAPPED
+        best, saving = None, 1e-6
+        for flip, each in candidates.items():
+            gain = try_move(flip, each)
+            if gain > saving:
+                best, saving = flip, gain
+        if best is None:
+            continue
+        for i in best:
+            hand[i] = other[hand[i]]
+            price[i] = candidates[best] or price[i]
+        for a in {k2 for i in best for k2 in counts_at[i]}:
+            costs[a] = cost(a)
+            if costs[a] > 0:
+                todo.append(a)
+
+    if moved is not None:
+        moved += [n.start for n, h, g in zip(notes, hand, given) if h != g]
+    return [n if h == g else replace(n, hand=h, finger=None) for n, h, g in zip(notes, hand, given)]
 
 
 def hand_accuracy(predicted: list[Note], truth: list[Note]) -> float:

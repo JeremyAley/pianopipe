@@ -298,18 +298,46 @@ def test_the_piano_plays_until_a_pickup_and_through_a_long_rest(tmp_path):
                                                      (8, E5), (9, A4), (10, G4)]
 
 
-def test_a_figure_intro_is_one_held_note_a_bar_not_hammered(tmp_path):
-    # Go The Distance's intro: D6 D5 A5 D5 in sixteenths for two bars before the voice comes in. Level 1 holds the
-    # D6 a bar at a time (it struck it on every beat); the merged arrangement's intro is the piano's, unchanged.
-    whole_rest = '<note><rest measure="yes"/><duration>16</duration><voice>1</voice></note>'
-    figure = "".join(note(s, o, 1) for s, o in (("D", 6), ("D", 5), ("A", 5), ("D", 5))) * 4
-    piano = [bar(figure, LH), bar(figure, LH), bar(CHORDS, LH)]
-    sc = song(tmp_path, [[whole_rest, whole_rest, TUNE]], piano, melody=False)
-    assert [(n.start / Q, n.end / Q, n.pitch) for n in sorted(lv_notes(sc, 1), key=lambda n: n.start)][:3] == \
-        [(0, 4, 86), (4, 8, 86), (8, 9, E5)]
-    merged = song(tmp_path, [[whole_rest, whole_rest, TUNE]], piano)
+WHOLE_REST = '<note><rest measure="yes"/><duration>16</duration><voice>1</voice></note>'
+FIGURE = "".join(note(s, o, 1) for s, o in (("D", 6), ("D", 5), ("A", 5), ("D", 5))) * 4
+
+
+def test_a_pedal_figure_intro_isnt_hammered(tmp_path):
+    # Go The Distance's intro: D6 D5 A5 D5 in sixteenths for two bars before the voice comes in, nothing held under
+    # it. Level 1 struck D6 on every beat; now it rests until the voice. The merged arrangement's intro is the
+    # piano's, unchanged.
+    piano = [bar(FIGURE, LH), bar(FIGURE, LH), bar(CHORDS, LH)]
+    sc = song(tmp_path, [[WHOLE_REST, WHOLE_REST, TUNE]], piano, melody=False)
+    assert [(n.start / Q, n.pitch) for n in sorted(lv_notes(sc, 1), key=lambda n: n.start)][:2] == [(8, E5), (9, D5)]
+    merged = song(tmp_path, [[WHOLE_REST, WHOLE_REST, TUNE]], piano)
     intro = lambda s: [(n.start, n.end, n.pitch, n.hand) for n in s.notes if n.start < 8 * Q]  # noqa: E731
     assert intro(merged) == intro(sc)
+
+
+def test_the_held_line_under_a_pedal_is_a_top_line_and_takes_notes_held_into_it():
+    from pianopipe.difficulty import _under_pedal
+    s = Q // 4
+    pedal = [Note(4 * Q + i * Q, 4 * Q + i * Q + s, 86, hand="R") for i in range(4)]  # D6 on beats 5-8
+    # B4 held from beat 3 to 8 (into the pedal stretch), A4 and F#4 entering under it: the line is B4 alone, from
+    # the stretch's start.
+    held = [Note(2 * Q, 8 * Q, B4, hand="R"), Note(5 * Q, 6 * Q, A4, hand="L"), Note(6 * Q, 7 * Q, 66, hand="L")]
+    got = _under_pedal(pedal, pedal + held, [(0, 2 * Q)], TPB)
+    assert [(n.start, n.end, n.pitch) for n in got] == [(4 * Q, 8 * Q, B4)]
+    # B4 held through beats 5-8, a C5 above it on beat 6, an A4 under it on beat 7: B4, C5, and no A4 (the B4 is
+    # still held over it, though the line cut it at the C5).
+    held = [Note(4 * Q, 8 * Q, B4, hand="R"), Note(5 * Q, 6 * Q, C5, hand="R"), Note(6 * Q, 7 * Q, A4, hand="R")]
+    got = _under_pedal(pedal, pedal + held, [(0, 2 * Q)], TPB)
+    assert [(n.start, n.end, n.pitch) for n in got] == [(4 * Q, 5 * Q, B4), (5 * Q, 6 * Q, C5)]
+
+
+def test_under_a_pedal_figure_level_1_takes_the_held_line(tmp_path):
+    # The same figure over a held inner line, B4 A4 F#4 (quarter, quarter, half) as in Go The Distance's bars 2
+    # and 4: level 1 plays that line, not the figure's top.
+    inner = note("B", 4, 4, 2) + note("A", 4, 4, 2) + note("F", 4, 8, 2, 1, alter=1)
+    piano = [bar(FIGURE + backup() + inner, LH), bar(CHORDS, LH)]
+    sc = song(tmp_path, [[WHOLE_REST, TUNE]], piano, melody=False)
+    assert [(n.start / Q, n.pitch) for n in sorted(lv_notes(sc, 1), key=lambda n: n.start)][:4] == \
+        [(0, B4), (1, A4), (2, 66), (4, E5)]
 
 
 def test_held_figure_counts_from_the_previous_strike_and_never_crosses_the_voice():
