@@ -70,6 +70,8 @@ MAX_HAND = 5
 RELEASE = 4.0  # letting a held note go before its end
 HOLD_REACH = 12  # semitones: a held note further than this from the next notes is treated as released
 MAX_PRINTED_RETRIES = 50  # searches tried while dropping printed fingers that don't fit, before ignoring them all
+REPEAT_WINDOW = 6  # onsets: a passage at least this long that comes back note for note keeps its first fingering ...
+PREFER = 3.0  # ... unless that costs more than this for each note fingered otherwise
 
 
 class ForcedFingerError(ValueError):
@@ -175,21 +177,79 @@ def finger_hand(notes: list[Note], hand: str, ticks_per_beat: int = 480) -> dict
 
 
 def search(
-    notes: list[Note], hand: str, ticks_per_beat: int = 480, forced: dict[int, int] | None = None
+    notes: list[Note], hand: str, ticks_per_beat: int = 480, forced: dict[int, int] | None = None,
+    prefer: dict[int, int] | None = None,
 ) -> tuple[dict[int, int], float]:
     """Viterbi search over one hand's notes (sorted by start). Returns (note index -> finger, total cost).
 
     `forced` pins some notes' fingers, which prices a given fingering (used by the evaluation to explain choices).
+    `prefer` asks for some notes' fingers at PREFER for each note that doesn't get its finger (_repeats).
     """
     if not notes:
         return {}, 0.0
-    forced = forced or {}
+    trellis, onset_sets = _trellis(notes, hand, ticks_per_beat, forced or {}, prefer or {})
+    k = min(range(len(trellis[-1])), key=lambda i: trellis[-1][i].cost)
+    total = trellis[-1][k].cost
+    out: dict[int, int] = {}
+    for c in range(len(trellis) - 1, -1, -1):
+        state = trellis[c][k]
+        for i in onset_sets[c]:
+            out[i] = state.fingers[i]
+        k = state.back
+    return out, total
+
+
+def margins(
+    notes: list[Note], hand: str, ticks_per_beat: int = 480, forced: dict[int, int] | None = None
+) -> tuple[dict[int, int], dict[int, float]]:
+    """search(), plus each note's margin: how much more the cheapest fingering that gives the note another finger
+    costs than the cheapest one overall (min-sum forward-backward over the same trellis). A small margin means another
+    finger was nearly as good, so the choice is a guess. Used by the evaluation (fingering_eval.evaluate_printed): it
+    separates right from wrong too weakly to drop fingers by it (docs/catalog-expansion.md §2.9)."""
+    if not notes:
+        return {}, {}
+    edges: list = []
+    trellis, onset_sets = _trellis(notes, hand, ticks_per_beat, forced or {}, {}, edges)
+    # Backward costs: the cheapest way from a state to the end, its own unary cost not included.
+    back = [[0.0] * len(states) for states in trellis]
+    for c in range(len(trellis) - 1, 0, -1):
+        for j in range(len(trellis[c - 1])):
+            back[c - 1][j] = float("inf")
+    pos = {id(s): k for states in trellis for k, s in enumerate(states)}
+    for c, j, s, step in reversed(edges):  # edges come in onset order, so every later onset is final first
+        k = pos[id(s)]
+        v = step + s.unary + back[c][k]
+        if v < back[c - 1][j]:
+            back[c - 1][j] = v
+    best = min(s.cost for s in trellis[-1])
+    fingers: dict[int, int] = {}
+    margin: dict[int, float] = {}
+    for c, states in enumerate(trellis):
+        through = [s.cost + back[c][k] for k, s in enumerate(states)]
+        for i in onset_sets[c]:
+            by_finger: dict[int, float] = {}
+            for s, t in zip(states, through):
+                f = s.fingers[i]
+                if t < by_finger.get(f, float("inf")):
+                    by_finger[f] = t
+            chosen = min(by_finger, key=by_finger.get)
+            fingers[i] = chosen
+            others = [t for f, t in by_finger.items() if f != chosen]
+            margin[i] = (min(others) if others else float("inf")) - best
+    return fingers, margin
+
+
+def _trellis(
+    notes: list[Note], hand: str, ticks_per_beat: int, forced: dict[int, int], prefer: dict[int, int],
+    edges: list | None = None,
+):
+    """The Viterbi trellis: one list of states per onset, each with its cheapest cost so far and back pointer, and
+    the note indices of each onset. With `edges`, every transition is appended to it as (onset, previous state index,
+    state, cost)."""
     rh_pitch = (lambda p: p) if hand == "R" else (lambda p: MIRROR - p)
-    window = max(1, ticks_per_beat // 32)
     hold = max(1, ticks_per_beat // 4)  # a note still sounding this long after the next onset is held
     rest = max(1, ticks_per_beat // 4)  # a gap this long before an onset lets the hand move freely
-    index = {id(n): i for i, n in enumerate(notes)}
-    chords = [[index[id(n)] for n in c] for c in group_chords(notes, window)]
+    chords = _onsets(notes, ticks_per_beat)
 
     trellis: list[list[_State]] = []
     onset_sets: list[list[int]] = []
@@ -216,7 +276,8 @@ def search(
                 if any(fmap[i] != forced[i] for i in chord if i in forced):
                     continue
                 rests = [_key_x(rh_pitch(notes[i].pitch)) - KEY_OFFSET[fmap[i]] for i in chord]
-                states.append(_State(fmap, _vertical(pitches, fingers, onsets), sum(rests) / len(rests)))
+                unary = _vertical(pitches, fingers, onsets) + PREFER * sum(fmap[i] != prefer.get(i, fmap[i]) for i in chord)
+                states.append(_State(fmap, unary, sum(rests) / len(rests)))
         if not states:
             raise ForcedFingerError(
                 f"forced fingers {[forced.get(i) for i in chord]} don't fit the notes at tick {start}",
@@ -233,12 +294,16 @@ def search(
                     if any(p.fingers.get(i) != s.fingers[i] for i in held):
                         continue  # a held note keeps its finger, and a note let go stays released
                     released = sum(i not in s.fingers for i in sounding if i in p.fingers)
-                    total = p.cost + _move(p, s, prev_chord, chord, notes, rh_pitch, detached) + RELEASE * released
-                    if total < best:
-                        best, back = total, j
+                    step = _move(p, s, prev_chord, chord, notes, rh_pitch, detached) + RELEASE * released
+                    if edges is not None:
+                        edges.append((len(trellis), j, s, step))
+                    if p.cost + step < best:
+                        best, back = p.cost + step, j
                 if back < 0:  # every previous state used a held note's finger differently: start afresh
                     j = min(range(len(trellis[-1])), key=lambda k: trellis[-1][k].cost)
                     best, back = trellis[-1][j].cost + SHIFT, j
+                    if edges is not None:
+                        edges.append((len(trellis), j, s, SHIFT))
                 s.cost, s.back = best + s.unary, back
         else:
             for s in states:
@@ -247,16 +312,7 @@ def search(
         onset_sets.append(chord)
         sounding = sounding + chord
         prev_end = max(notes[i].end for i in chord)
-
-    k = min(range(len(trellis[-1])), key=lambda i: trellis[-1][i].cost)
-    total = trellis[-1][k].cost
-    out: dict[int, int] = {}
-    for c in range(len(trellis) - 1, -1, -1):
-        state = trellis[c][k]
-        for i in onset_sets[c]:
-            out[i] = state.fingers[i]
-        k = state.back
-    return out, total
+    return trellis, onset_sets
 
 
 def _move(p: _State, s: _State, prev_chord: list[int], chord: list[int], notes: list[Note], rh_pitch, detached: bool) -> float:
@@ -301,23 +357,54 @@ def _chord_move(p: _State, s: _State, prev_chord: list[int], chord: list[int], n
     return cost
 
 
-def keep_printed(notes: list[Note], hand: str, ticks_per_beat: int, printed: dict[int, int]) -> dict[int, int]:
+def keep_printed(
+    notes: list[Note], hand: str, ticks_per_beat: int, printed: dict[int, int], prefer: dict[int, int] | None = None
+) -> dict[int, int]:
     """search() with the printed fingers (note index -> finger) pinned, as many as fit: when an onset's printed
     fingers can't be played together (two notes of a chord on one finger, a chord reordered by the hand split), that
-    onset's printed fingers are dropped and the search runs again."""
+    onset's printed fingers are dropped and the search runs again. `prefer` goes to search()."""
     printed = dict(printed)
     for _ in range(MAX_PRINTED_RETRIES):
         try:
-            return search(notes, hand, ticks_per_beat, printed)[0]
+            return search(notes, hand, ticks_per_beat, printed, prefer)[0]
         except ForcedFingerError as exc:
             for i in exc.notes:
                 printed.pop(i, None)
-    return search(notes, hand, ticks_per_beat)[0]
+    return search(notes, hand, ticks_per_beat, prefer=prefer)[0]
+
+
+def _repeats(notes: list[Note], ticks_per_beat: int, fingers: dict[int, int]) -> dict[int, int]:
+    """Fingers that make a passage that comes back note for note (REPEAT_WINDOW onsets or more, same pitches and
+    rhythm) fingered as it was the first time: note index -> finger, for the first occurrence and its repeats. The
+    search alone fingers a repeat by what comes before it, so a learner would see the same bars fingered two ways."""
+    chords = [sorted(c, key=lambda i: notes[i].pitch) for c in _onsets(notes, ticks_per_beat)]
+    first: dict[tuple, int] = {}
+    out: dict[int, int] = {}
+    for k in range(len(chords) - REPEAT_WINDOW + 1):
+        run = chords[k:k + REPEAT_WINDOW]
+        t0 = notes[run[0][0]].start
+        sig = tuple(tuple((notes[i].start - t0, notes[i].pitch) for i in c) for c in run)
+        k0 = first.setdefault(sig, k)
+        if k0 == k:
+            continue
+        for a_chord, b_chord in zip(chords[k0:k0 + REPEAT_WINDOW], run):
+            for a, b in zip(a_chord, b_chord):
+                out.setdefault(a, fingers[a])
+                out.setdefault(b, out[a])
+    return out
+
+
+def _onsets(notes: list[Note], ticks_per_beat: int) -> list[list[int]]:
+    """The note indices of each onset (the search's chords), in order."""
+    index = {id(n): i for i, n in enumerate(notes)}
+    return [[index[id(n)] for n in c] for c in group_chords(notes, max(1, ticks_per_beat // 32))]
 
 
 def assign_fingering(notes: list[Note], ticks_per_beat: int = 480) -> list[Note]:
     """Return the notes (same order) with `finger` set for every note that has a hand. A finger the note already has
-    (printed in a MusicXML score) is kept where it fits (keep_printed); the search fills in the rest around it."""
+    (printed in a MusicXML score) is kept where it fits (keep_printed); the search fills in the rest around it, and a
+    passage that comes back is fingered as it was the first time (_repeats).
+    `printed` is set on the notes whose finger is still the one they came with (docs/formats.md, Fingering)."""
     out = list(notes)
     for hand in ("R", "L"):
         idx = [i for i, n in enumerate(notes) if n.hand == hand]
@@ -325,6 +412,11 @@ def assign_fingering(notes: list[Note], ticks_per_beat: int = 480) -> list[Note]
         order = {id(n): k for k, n in enumerate(hand_notes)}
         printed = {k: n.finger for k, n in enumerate(hand_notes) if n.finger in FINGERS}
         fingers = keep_printed(hand_notes, hand, ticks_per_beat, printed) if printed else finger_hand(hand_notes, hand, ticks_per_beat)
+        kept = {k: f for k, f in printed.items() if fingers[k] == f}
+        copied = {k: f for k, f in _repeats(hand_notes, ticks_per_beat, fingers).items() if k not in kept}
+        if any(fingers[k] != f for k, f in copied.items()):
+            fingers = keep_printed(hand_notes, hand, ticks_per_beat, kept, copied)
         for i in idx:
-            out[i] = replace(notes[i], finger=fingers[order[id(notes[i])]])
+            f = fingers[order[id(notes[i])]]
+            out[i] = replace(notes[i], finger=f, printed=notes[i].finger == f)
     return out

@@ -6,7 +6,8 @@ Each level is a full song the app can switch to with the difficulty slider:
                     after that beat (_fill_held); a trill becomes one held note, a grace note gives way to its main
                     note, and broken-chord figuration a sixteenth or faster becomes the top note of each beat
                     (_figuration). In bars whose tune is in the left hand (left_tune_bars), the left hand's top line
-                    instead (melody)
+                    instead (melody). A song's voice part, where it has one (musicxml.Score.tune), is the tune in
+                    the bars it covers
   2 Melody + bass   adds the other hand's outer line, thinned to the first onset in each beat of the time signature
                     (at least a quarter long, see bass_grid): the left hand's bottom line, or the right hand's top
                     line over a left-hand tune
@@ -386,33 +387,116 @@ def melody(notes: list[Note], tpb: int, meta=()) -> list[Note]:
     return _melody(notes, tpb, meta)[0]
 
 
-def make_level(notes: list[Note], level: int, ticks_per_beat: int, meta=()) -> list[Note]:
+def _in_spans(spans: list[tuple[int, int]]):
+    """tick -> whether it falls in one of the (start, end) `spans` (sorted, not overlapping)."""
+    firsts = [a for a, _ in spans]
+
+    def inside(tick: int) -> bool:
+        i = bisect_right(firsts, tick) - 1
+        return i >= 0 and tick < spans[i][1]
+    return inside
+
+
+LONG_REST = 2  # beats (quarters) of the voice resting, within the bars it's used in, where the piano's line plays
+
+
+def _sung(tune: list[Note], bars: list[tuple[int, int]], tpb: int) -> list[tuple[int, int]]:
+    """The spans of `bars` the voice's tune covers: without its rests of LONG_REST beats or more (the piano's intro
+    before a pickup, a break between verses), where level 1 would otherwise go quiet."""
+    tune = sorted(tune, key=lambda n: n.start)
+    quiet, last = [], None
+    for n in tune:
+        a = bars[0][0] if last is None else last
+        if n.start - a >= LONG_REST * tpb:
+            quiet.append((a, n.start))
+        last = n.end if last is None else max(last, n.end)
+    if last is not None and bars[-1][1] - last >= LONG_REST * tpb:
+        quiet.append((last, bars[-1][1]))
+    out = []
+    for a, b in bars:
+        for qa, qb in quiet:
+            if qa < b and qb > a:
+                if qa > a:
+                    out.append((a, qa))
+                a = max(a, qb)
+        if a < b:
+            out.append((a, b))
+    return out
+
+
+def _held_figure(line: list[Note], notes: list[Note], tpb: int, meta, spans: list[tuple[int, int]]) -> list[Note]:
+    """The piano's line where it stands in for a voice part (make_level's `tune`), with a pitch it repeats at each
+    beat of a figure (the hand strikes two notes or more between the repeats) held instead, once a bar and never
+    across the voice's `spans`: Go The Distance's intro is D6 D5 A5 D5 in sixteenths, and its level 1 was D6 struck
+    on every beat for four bars."""
+    onsets = {h: sorted({n.start for n in notes if n.hand == h}) for h in ("R", "L")}
+    bar_of = _bar_of(notes, tpb, meta) if line else None
+    sung = sorted(a for a, _ in spans)
+    out: list[Note] = []
+    prev = None  # the line's previous note as it was (out[-1] may be a hold that started earlier)
+    for n in sorted(line, key=lambda n: (n.start, -n.pitch)):
+        if prev is not None and out[-1].pitch == n.pitch and out[-1].hand == n.hand and \
+                bar_of(prev.start) == bar_of(n.start) and bisect_left(sung, n.start) == bisect_right(sung, prev.start):
+            hand = onsets.get(n.hand, [])
+            if bisect_left(hand, n.start) - bisect_right(hand, prev.start) >= 2:
+                out[-1] = replace(out[-1], end=max(out[-1].end, n.end))
+                prev = n
+                continue
+        out.append(n)
+        prev = n
+    return out
+
+
+def make_level(notes: list[Note], level: int, ticks_per_beat: int, meta=(), tune=None) -> list[Note]:
     """Level `level` of the full arrangement `notes` (hands set). `meta` is the song's meta events (for the time
-    signature's beat and bars; without one, a beat is a quarter in 4/4)."""
+    signature's beat and bars; without one, a beat is a quarter in 4/4). `tune`: (notes, spans), a song's voice part
+    (musicxml.Score.tune and tune_bars) that levels 1 and 2 take as their tune within the spans, less its long rests
+    (_sung), in the right hand, with the left hand's bottom line under it in level 2; elsewhere, the piano's own line
+    as usual."""
     if level not in LEVELS:
         raise ValueError(f"unknown level {level}")
     if level == 4:
         return list(notes)
     tpb = ticks_per_beat
     if level in (1, 2):
-        tune, left_bars, bar_of = _melody(notes, tpb, meta)
+        line, left_bars, bar_of = _melody(notes, tpb, meta)
+        gap = MELODY_MIN_GAP * tpb // 8
+        spans = _sung(tune[0], tune[1], tpb) if tune and tune[0] else []
+        sung = _in_spans(spans)
+        if spans:
+            # The piano's line where the voice isn't used (an intro, a break, a bar OMR misread): each note less the
+            # voice's spans, every piece of it left over a 32nd note or longer (a note held from a sung bar into one
+            # the voice isn't used in plays on there).
+            kept = []
+            for n in line:
+                a = n.start
+                for sa, sb in spans:
+                    if sb <= a or sa >= n.end:
+                        continue
+                    if sa - a >= tpb // 8:
+                        kept.append(replace(n, start=a, end=sa))
+                    a = max(a, sb)
+                if n.end - a >= tpb // 8 or (a == n.start and n.end > a):
+                    kept.append(replace(n, start=a) if a != n.start else n)
+            line = sorted(_held_figure(kept, notes, tpb, meta, spans) +[replace(n, hand="R") for n in tune[0]],
+                          key=lambda n: (n.start, n.pitch))
         if level == 1:
-            return _quantize(tune, tpb // 2)
+            return _quantize(line, tpb // 2)
         # The other hand's outer line, one note a beat: the bass under a right-hand tune, the right hand's top line
         # over a left-hand one.
-        gap = MELODY_MIN_GAP * tpb // 8
         other = outer_notes(notes, "L", tpb, gap, meta)
         if left_bars:
             over = outer_notes(notes, "R", tpb, gap, meta)
-            other = [n for n in other if bar_of(n.start) not in left_bars] + [n for n in over if bar_of(n.start) in left_bars]
-        return _quantize(tune + one_per_beat(other, meta, tpb), tpb // 2)
+            other = [n for n in other if sung(n.start) or bar_of(n.start) not in left_bars] + \
+                    [n for n in over if not sung(n.start) and bar_of(n.start) in left_bars]
+        return _quantize(line + one_per_beat(other, meta, tpb), tpb // 2)
     rh = _per_chord(notes, "R", lambda c: c[-2:], tpb)
     lh = _per_chord(notes, "L", lambda c: c[:1] + (c[-1:] if len(c) > 1 else []), tpb)
     return _quantize(rh + lh, tpb // 4)
 
 
-def make_levels(notes: list[Note], ticks_per_beat: int, meta=()) -> dict[int, list[Note]]:
-    return {lvl: make_level(notes, lvl, ticks_per_beat, meta) for lvl in LEVELS}
+def make_levels(notes: list[Note], ticks_per_beat: int, meta=(), tune=None) -> dict[int, list[Note]]:
+    return {lvl: make_level(notes, lvl, ticks_per_beat, meta, tune) for lvl in LEVELS}
 
 
 # Difficulty score: a fixed scale (not normalised per catalog), so a song's number doesn't change when others are added.

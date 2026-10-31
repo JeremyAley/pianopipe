@@ -7,8 +7,11 @@ missing; readers ignore fields they don't know.
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
+import math
 import re
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
@@ -21,6 +24,7 @@ CHARACTERS = ("agile", "lyrical", "other")
 GRADE_TAGS = ((3.5, "beginner"), (5.5, "intermediate"), (float("inf"), "advanced"))
 # Without a grade (no grade model), the full level's difficulty decides, with these limits (up to and including).
 DIFFICULTY_TAGS = ((4.0, "beginner"), (6.5, "intermediate"), (float("inf"), "advanced"))
+WELL_KNOWN = 0.6  # a song's `known` from here up: most people would recognise it (tiers 3 and 4 of load_known)
 
 
 def grade_tag(grade: float | None, difficulty: float | None = None) -> str:
@@ -80,6 +84,7 @@ class SongEntry:
     era: str = ""  # optional: Baroque, Classical, Romantic, Impressionist, Modern
     tags: list[str] = field(default_factory=list)  # optional: grade (beginner/intermediate/advanced), form, source
     character: str = ""  # optional: agile, lyrical or other
+    known: float | None = None  # optional: how widely known, 0-1 (load_known); WELL_KNOWN and up is well known
 
 
 def _known(cls, data: dict) -> dict:
@@ -99,6 +104,8 @@ class Catalog:
             for key in ("full_title", "character"):
                 if not song[key]:
                     del song[key]
+            if song["known"] is None:
+                del song["known"]
             for lv in song["levels"]:
                 for key in ("difficulty", "grade", "tempo_bpm", "sheet"):
                     if lv[key] is None:
@@ -161,6 +168,9 @@ def validate(data: dict) -> None:
                 raise ValueError(f"song {s['id']} {key} must be strings")
         if s.get("character", "agile") not in CHARACTERS:
             raise ValueError(f"song {s['id']} character {s['character']!r} is not one of {', '.join(CHARACTERS)}")
+        known = s.get("known", 0)
+        if isinstance(known, bool) or not isinstance(known, (int, float)) or not 0 <= known <= 1:
+            raise ValueError(f"song {s['id']} known must be a number from 0 to 1")
         levels = set()
         for lv in s["levels"]:
             for key in ("level", "url", "sha256"):
@@ -285,3 +295,25 @@ def verify_sheet(path: Path, ref: dict) -> list[str]:
         if played != list(range(1, int(data.get("bars", 0)) + 1)):
             problems.append(f"{ref['url']}: the measures' plays don't cover bars 1-{data.get('bars')} once each")
     return problems
+
+
+def load_known(path: str | Path) -> dict[str, float]:
+    """Song id -> `known` (0-1) from a best-known list (pipeline/data/known.csv: id, tier 0-4, wikipedia, views; lines
+    starting with # are comments). The hand-reviewed tier sets the band, and the page views order songs within it:
+    known = (tier + 0.95 * v) / 5, v being log(views) scaled to 0-1 between the fewest and most views listed (0 for
+    a song without views), so a tier never overlaps the next and tier 3 and up is WELL_KNOWN."""
+    text = Path(path).read_text(encoding="utf-8")
+    rows = list(csv.DictReader(io.StringIO("".join(l for l in text.splitlines(True) if not l.startswith("#")))))
+    logs = [math.log10(int(r["views"])) for r in rows if r["views"].strip() and int(r["views"]) > 0]
+    lo, hi = (min(logs), max(logs)) if logs else (0.0, 0.0)
+    out = {}
+    for r in rows:
+        tier = int(r["tier"])
+        if not 0 <= tier <= 4:
+            raise ValueError(f"known: {r['id']} tier {tier} is not 0-4")
+        if r["id"] in out:
+            raise ValueError(f"known: {r['id']} listed twice")
+        views = int(r["views"]) if r["views"].strip() else 0
+        v = (math.log10(views) - lo) / (hi - lo) if views > 0 and hi > lo else 0.0
+        out[r["id"]] = round((tier + 0.95 * v) / 5, 2)
+    return out

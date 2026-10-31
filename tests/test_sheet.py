@@ -356,7 +356,7 @@ def test_engrave_writes_pages_and_a_bar_map(tmp_path):
     assert [m["bar"] for m in data["measures"]] == list(range(1, 13))
     for page in data["pages"]:
         png = (tmp_path / "out" / page["file"]).read_bytes()
-        assert png[:8] == b"\x89PNG\r\n\x1a\n" and png[25] == 0  # 8-bit greyscale, what the app's decoder reads
+        assert png[:8] == b"\x89PNG\r\n\x1a\n" and png[24] == 2 and png[25] == 0  # 2-bit greyscale, as GreyPng reads
         assert catalog.hashlib.sha256(png).hexdigest() == page["sha256"]
     for m in data["measures"]:
         sys_ = data["systems"][m["system"]]
@@ -370,6 +370,109 @@ def test_engrave_writes_pages_and_a_bar_map(tmp_path):
     # The same level engraves to the same files (the app keeps pages whose sha256 hasn't changed).
     again = engrave.engrave(level, tmp_path / "out2", "level4", 4)
     assert again.sha256 == sheet.sha256
+
+
+@needs_engraver
+def test_pages_print_a_title_block_page_numbers_and_two_tones(tmp_path):
+    """ui-visual-pass.md §4.2: page 1 opens with a title block (title, the level, the tempo word, the composer), every
+    page has its number in its outer top corner (odd pages top left, even top right), and staff lines and barlines print
+    in the 2-bit page's staff grey (level 1) while the notes are black."""
+    from PIL import Image
+
+    rh, lh = two_hand_piece(60)
+    level = app_midi(tmp_path / "level2.mid", rh, lh, [ts(0, 4, 4), ks(0, "C")])
+    sheet = engrave.engrave(level, tmp_path / "out", "level2", 2, "A Test Piece", composer="Anon.")
+    data = sheet.data
+    assert sheet.pages >= 2
+    pages = [Image.open(tmp_path / "out" / p["file"]).convert("L") for p in data["pages"]]
+
+    def inked(img, box, below=128):
+        return sum(1 for v in img.crop(box).getdata() if v < below)
+
+    w = data["width"]
+    first_top = min(s["top"] for s in data["systems"] if s["page"] == 1) * data["height"]
+    # The title block sits above the first system: the title in the middle, the tempo word left, the composer right.
+    assert first_top > 190
+    assert inked(pages[0], (w // 2 - 160, 85, w // 2 + 160, 136)) > 600  # title
+    assert inked(pages[0], (40, 140, 250, 174)) > 80 and inked(pages[0], (w - 250, 140, w - 40, 174)) > 80
+    # Big enough to read at the bench (gate r3): the composer's capitals 1.4 staff spaces (20 px) or more.
+    rows = [y for y in range(138, 176) if inked(pages[0], (w - 120, y, w - 40, y + 1)) > 0]
+    assert rows and max(rows) - min(rows) >= 20
+    # Later pages start near the top: no title block.
+    later = min(s["top"] for s in data["systems"] if s["page"] == 2) * data["height"]
+    assert later < first_top - 60
+    # Page numbers: page 1 top left, page 2 top right, nothing in the other corner.
+    # Page numbers: none on page 1 (the title's page), then the outer corner, clear of the top trim.
+    assert inked(pages[0], (36, 6, 80, 60)) == 0 and inked(pages[0], (w - 80, 6, w - 36, 60)) == 0
+    assert inked(pages[1], (w - 80, 30, w - 36, 58)) > 10 and inked(pages[1], (36, 6, 80, 60)) == 0
+    assert inked(pages[1], (0, 0, w, 28)) == 0
+    if len(pages) > 2:
+        assert inked(pages[2], (36, 30, 80, 58)) > 10
+    # Two tones: a staff line, away from the notes, is staff grey; the page has black ink too.
+    s0 = next(s for s in data["systems"] if s["page"] == 2)
+    m0 = next(m for m in data["measures"] if m["system"] == data["systems"].index(s0))
+    y = round(s0["bottom"] * data["height"])
+    x0, x1 = round(m0["left"] * w) + 4, round(m0["right"] * w) - 4
+    line = [min(pages[1].getpixel((x, yy)) for yy in (y - 1, y, y + 1)) for x in range(x0, x1)]
+    assert sum(1 for v in line if v == 85) > 0.5 * len(line)
+    # Every level has one meaning: black symbols (noteheads, stems), the staff grey only on lines, a half-ink edge.
+    assert inked(pages[1], (0, 0, w, data["height"]), below=40) > 1000
+    assert set(pages[1].getdata()) <= {0, 85, 170, 255}
+    # No tempo marking in the source: a metronome mark at the beat, never a guessed word (gate r2). The dotted quarter
+    # in 6/8, the quarter in 3/8 (Für Elise: quarter = 69), the half in 2/2.
+    assert engrave.metronome_mark(120) == ("quarter", 120) and engrave.metronome_mark(69, 3, 8) == ("quarter", 69)
+    assert engrave.metronome_mark(90, 6, 8) == ("dotted quarter", 60) and engrave.metronome_mark(200, 2, 2) == ("half", 100)
+    h = engrave.page_header(midi_io.load(level), 2, "A Test Piece", "Anon.")
+    assert h.tempo == "" and h.beat == "quarter" and h.bpm > 0
+    # With the source's own marking, that is printed instead (tools/source_tempo.py, data/catalog/tempo.json).
+    h = engrave.page_header(midi_io.load(level), 2, "A Test Piece", "Anon.", tempo="Poco moto")
+    assert h.tempo == "Poco moto" and h.bpm == 0
+
+
+def test_a_score_without_opening_words_keeps_the_title_blocks_tempo():
+    """A MusicXML score engraved as written prints its own opening tempo words, so the title block leaves its tempo
+    out; one with only a metronome mark (which keyboard_notation drops) keeps the title block's (Sol review)."""
+    words = ('<measure number="1"><direction><direction-type><words>Allegro</words></direction-type></direction>'
+             '<note/></measure><measure number="2"></measure>')
+    bare = '<measure number="1"><direction><direction-type><dynamics><p/></dynamics></direction-type></direction></measure>'
+    dolce = '<measure number="1"><direction><direction-type><words>dolce</words></direction-type></direction></measure>'
+    assert engrave._opening_words(words) and not engrave._opening_words(bare) and not engrave._opening_words(dolce)
+
+
+def test_an_implausible_file_tempo_prints_no_metronome_mark(monkeypatch):
+    """A file's tempo far faster than the music's (the Clementi sonatina's MIDI at quarter = 203) prints nothing in the
+    title block, rather than a wrong number (gate r3)."""
+    from pianopipe import features
+
+    rh, lh = two_hand_piece(4)
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        level = app_midi(Path(tmp) / "l.mid", rh, lh, [ts(0, 4, 4), ks(0, "C")])
+        song = midi_io.load(level)
+    monkeypatch.setattr(features, "tempo_bpm", lambda *a: 203)
+    h = engrave.page_header(song, 4, "T")
+    assert h.tempo == "" and h.bpm == 0 and h.beat == ""
+    monkeypatch.setattr(features, "tempo_bpm", lambda *a: 132)
+    assert engrave.page_header(song, 4, "T").bpm == 132
+
+
+@needs_engraver
+def test_pages_are_dense_but_legible(tmp_path):
+    """docs/sheet-music.md §5.3 (2026-10-28): staff lines 14.4 pixels apart (a staff 1.8 cm tall on a medium page), and
+    a plain grand staff piece fills a page with 6 or more systems instead of the old 4-5, with narrow margins."""
+    rh, lh = two_hand_piece(60)
+    level = app_midi(tmp_path / "level4.mid", rh, lh, [ts(0, 4, 4), ks(0, "C")])
+    data = engrave.engrave(level, tmp_path / "out", "level4", 4).data
+    first = [s for s in data["systems"] if s["page"] == 2]  # page 1 gives room to its title block
+    assert len(first) >= 6
+    # A system's top and bottom are its outer staff lines: two staves of 4 spaces each and the gap between them.
+    staff_px = 4 * 18 * engrave.SCALE / 100
+    assert staff_px == pytest.approx(57.6)
+    for s in first:
+        assert 2 * staff_px < (s["bottom"] - s["top"]) * data["height"] < 4 * staff_px
+    margin = engrave.MARGIN * engrave.SCALE / 100 / data["width"]
+    lefts = [m["left"] for m in data["measures"] if data["systems"][m["system"]]["page"] == 1]
+    assert min(lefts) == pytest.approx(margin, abs=0.01) and margin < 0.05  # 1.6 cm: bar numbers clear the binding
 
 
 @needs_engraver

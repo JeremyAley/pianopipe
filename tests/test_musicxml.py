@@ -195,6 +195,83 @@ def test_dal_segno_al_coda(tmp_path):
     assert _measures_played(musicxml.load(write(tmp_path, score([("Piano", bars)])))) == [1, 2, 3, 4, 2, 3, 5, 6]
 
 
+def words(text: str, placement: str = "above") -> str:
+    return f'<direction placement="{placement}"><direction-type><words>{text}</words></direction-type></direction>'
+
+
+def system(margin: int) -> str:
+    return (f'<print new-system="yes"><system-layout><system-margins><left-margin>{margin}</left-margin>'
+            f'<right-margin>0</right-margin></system-margins></system-layout></print>')
+
+
+def test_jumps_written_only_as_words(tmp_path):
+    # Audiveris's OCR: the words and signs, no <sound> attributes
+    segno = '<direction><direction-type><segno/></direction-type></direction>'
+    coda = '<direction><direction-type><coda/></direction-type></direction>'
+    bars = _bars(6, {2: segno, -3: words("To Coda"), -4: words("D.S. al Coda"), 5: coda})
+    assert _measures_played(musicxml.load(write(tmp_path, score([("Piano", bars)])))) == [1, 2, 3, 4, 2, 3, 5, 6]
+    bars = _bars(4, {-1: BWD, 2: words("Fine", "below"), -4: words("D.C. al Fine")})
+    assert _measures_played(musicxml.load(write(tmp_path, score([("Piano", bars)])))) == [1, 1, 2, 3, 4, 1, 2]
+    # a coda heading as words is the coda sign; "(To Coda)" in brackets still counts
+    bars = _bars(6, {2: segno, -3: words("(To Coda)"), -4: words("D.S. al Coda"), 5: words("CODA")})
+    assert _measures_played(musicxml.load(write(tmp_path, score([("Piano", bars)])))) == [1, 2, 3, 4, 2, 3, 5, 6]
+
+
+def test_lyrics_exported_as_words_are_not_jumps(tmp_path):
+    # "fine" in a lyric doesn't end a D.S. al Coda; a lyric line starting "Da..." isn't a D.C.
+    segno = '<direction><direction-type><segno/></direction-type></direction>'
+    bars = _bars(4, {2: segno, 3: words("fine", "below"), -2: words("da ca po da", "below"), -4: words("D.S. al Coda")})
+    sc = musicxml.load(write(tmp_path, score([("Piano", bars)])))
+    assert _measures_played(sc) == [1, 2, 3, 4, 2, 3, 4]
+    assert any("al Coda in measure 4 but no To Coda" in w for w in sc.warnings)
+    # ... nor where the D.S. al Coda is a <sound>
+    ds = '<direction><direction-type><words>D.S. al Coda</words></direction-type><sound dalsegno="s"/></direction>'
+    bars = _bars(4, {2: segno, 3: words("fine", "below"), -4: ds})
+    assert _measures_played(musicxml.load(write(tmp_path, score([("Piano", bars)])))) == [1, 2, 3, 4, 2, 3, 4]
+
+
+def test_missing_segno_is_guessed_at_the_first_forward_repeat(tmp_path):
+    bars = _bars(5, {2: FWD, -3: BWD, -4: words("D.S.")})
+    sc = musicxml.load(write(tmp_path, score([("Piano", bars)])))
+    assert _measures_played(sc) == [1, 2, 3, 2, 3, 4, 2, 3, 4, 5]
+    assert any("no segno: guessed measure 2" in w for w in sc.warnings)
+    sc = musicxml.load(write(tmp_path, score([("Piano", _bars(3, {-2: words("D.S. al Fine")}))])))
+    assert _measures_played(sc) == [1, 2, 1, 2, 3]
+    assert any("no segno: played from the start" in w for w in sc.warnings)
+    assert any("al Fine in measure 2 but no Fine" in w for w in sc.warnings)
+
+
+def test_missing_coda_sign_is_guessed_at_an_indented_system(tmp_path):
+    # To Coda in 2, D.S. in 4; systems start at 1, 3 and 6 (indented: the coda, Audiveris's second movement)
+    extras = {1: system(60), 2: '<direction><direction-type><segno/></direction-type></direction>', -2: words("To Coda"),
+              3: system(60), -4: words("D.S. al Coda"), 6: system(112)}
+    sc = musicxml.load(write(tmp_path, score([("Piano", _bars(7, extras))])))
+    assert _measures_played(sc) == [1, 2, 3, 4, 2, 6, 7]
+    assert any("no coda sign: guessed measure 6, the first indented system" in w for w in sc.warnings)
+    # no indented system: the measure after the D.S. when it starts a system
+    extras[6] = system(60)
+    extras[5] = system(60)
+    sc = musicxml.load(write(tmp_path, score([("Piano", _bars(7, extras))])))
+    assert _measures_played(sc) == [1, 2, 3, 4, 2, 5, 6, 7]
+    assert any("guessed measure 5, the system after the jump" in w for w in sc.warnings)
+    # neither: the To Coda is ignored, and said
+    del extras[5]
+    sc = musicxml.load(write(tmp_path, score([("Piano", _bars(7, extras))])))
+    assert _measures_played(sc) == [1, 2, 3, 4, 2, 3, 4, 5, 6, 7]
+    assert any("no coda sign: the To Coda is ignored" in w for w in sc.warnings)
+
+
+def test_ending_numbered_like_the_one_before_is_the_next(tmp_path):
+    # OCR read the second ending's "2." as "1."
+    ending1 = '<barline location="left"><ending number="1" type="start"/></barline>'
+    ending1_end = '<barline location="right"><ending number="1" type="stop"/><repeat direction="backward"/></barline>'
+    ending2_end = '<barline location="right"><ending number="1" type="discontinue"/></barline>'
+    bars = _bars(5, {2: FWD, 3: ending1, -3: ending1_end, 4: ending1, -4: ending2_end})
+    sc = musicxml.load(write(tmp_path, score([("Piano", bars)])))
+    assert _measures_played(sc) == [1, 2, 3, 2, 4, 5]
+    assert any("read as ending 2" in w for w in sc.warnings)
+
+
 def test_grace_notes(tmp_path):
     acc = note("D", 4, 0).replace("<duration>0</duration>", "").replace("<pitch>", '<grace slash="yes"/><pitch>')
     app = note("F", 4, 0).replace("<duration>0</duration>", "").replace("<pitch>", "<grace/><pitch>")
@@ -218,6 +295,31 @@ def test_tempo_sound_metronome_words_and_bogus_values(tmp_path):
     tempos = [(t, round(60_000_000 / m.tempo)) for t, m in sc.song.meta if m.type == "set_tempo"]
     assert tempos == [(0, 45), (4 * TPB, 90), (8 * TPB, 132)]
     assert any("450" in w for w in sc.warnings)
+
+
+def _tempos(sc) -> list[tuple[int, int]]:
+    return [(t // (4 * TPB), round(60_000_000 / m.tempo)) for t, m in sc.song.meta if m.type == "set_tempo"]
+
+
+def test_english_tempo_words(tmp_path):
+    assert musicxml._tempo_word("Moderately fast") == 126
+    assert musicxml._tempo_word("Moderately, expressively") == 100
+    assert musicxml._tempo_word("Moderately slow, wistful") == 80
+    assert musicxml._tempo_word("Bright Rock") == 152
+    assert musicxml._tempo_word("Slowly, freely") == 66
+    assert musicxml._tempo_word("Very freely throughout") == 72
+    assert musicxml._tempo_word("Not too fast") == 116
+    assert musicxml._tempo_word("A bit brighter") is None  # relative: the tempo stays
+    assert musicxml._tempo_word("NC. SIOWIY") == 66  # OCR's I for l
+    assert musicxml._tempo_word("Adagio - Allegro") == 60  # the first word wins
+    assert musicxml._tempo_word("fast", english=False) is None
+    met = ('<direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>92</per-minute>'
+           '</metronome></direction-type></direction>')
+    bars = _bars(5, {1: words("Moderately fast"), 2: words("Bright") + met, 3: words("fast as I can", "below"),
+                     4: words("Slowly"), 5: words("Tempo I")})
+    sc = musicxml.load(write(tmp_path, score([("Piano", bars)])))
+    # the metronome mark wins over the words beside it; lyrics below the staff aren't tempo words; Tempo I goes back
+    assert _tempos(sc) == [(0, 126), (1, 92), (3, 66), (4, 126)]
 
 
 def test_time_and_key_signatures(tmp_path):
@@ -340,8 +442,10 @@ def test_printed_fingering_reaches_the_level_files(tmp_path):
     process_file(p, tmp_path / "out", {"id": "f"}, policy=GatePolicy(min_duration_s=10))
     for level in (1, 4):
         mid = mido.MidiFile(tmp_path / "out" / "f" / f"level{level}.mid")
-        texts = [m.text for m in mid.tracks[1] if m.type == "text"][:4]
-        assert texts == ["f2", "f3", "f4", "f1"], level
+        texts = [m.text for m in mid.tracks[1] if m.type == "text"]
+        # The score's fingers, each marked printed; the bars after it have computed fingers, unmarked.
+        assert texts[:8] == ["printed", "f2", "printed", "f3", "printed", "f4", "printed", "f1"], level
+        assert texts[8] != "printed", level
 
 
 def test_bad_files(tmp_path):

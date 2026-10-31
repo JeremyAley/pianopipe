@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from pianopipe.catalog import Catalog, sha256_file, validate, verify
+from pianopipe.catalog import WELL_KNOWN, Catalog, load_known, sha256_file, validate, verify
 from pianopipe.cli import main
 from pianopipe.difficulty import difficulty_score
 from pianopipe.model import Note
@@ -159,6 +159,49 @@ def test_validate_rejects_bad_songs():
     data["songs"][0]["id"] = "Has Spaces"
     with pytest.raises(ValueError, match="bad song id"):
         validate(data)
+
+
+def test_known_from_the_manifest_reaches_catalog_json(tmp_path):
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    two_track(raw / "a.mid", bars=10)
+    two_track(raw / "b.mid", bars=10)
+    manifest = [{"id": "a", "file": "a.mid", "known": 0.87}, {"id": "b", "file": "b.mid"}]
+    build_catalog(raw, tmp_path / "cat", "T", manifest, OFFICIAL)
+    data = json.loads((tmp_path / "cat" / "catalog.json").read_text(encoding="utf-8"))
+    assert data["songs"][0]["known"] == 0.87 and "known" not in data["songs"][1]
+    assert Catalog.load(tmp_path / "cat" / "catalog.json").songs[0].known == 0.87
+    for bad in (-0.1, 1.5, "high", True):
+        data["songs"][0]["known"] = bad
+        with pytest.raises(ValueError, match="known"):
+            validate(data)
+
+
+def test_load_known_bands_by_tier_and_orders_by_views(tmp_path):
+    path = tmp_path / "known.csv"
+    path.write_text("# comment\nid,tier,wikipedia,views\nelise,4,Für Elise,1000000\nnursery,4,X,10000\n"
+                    "minuet,3,Y,1000000\nstudy,1,,\nrare,0,Z,100\n", encoding="utf-8")
+    known = load_known(path)
+    # Views scale on a log between the fewest (100) and the most (1,000,000): a tier's top is 0.19 above its floor.
+    assert known == {"elise": 0.99, "nursery": 0.89, "minuet": 0.79, "study": 0.2, "rare": 0.0}
+    assert all(known[k] >= WELL_KNOWN for k in ("elise", "nursery", "minuet")) and known["study"] < WELL_KNOWN
+    path.write_text("id,tier,wikipedia,views\na,5,,\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="tier"):
+        load_known(path)
+
+
+def test_official_known_list_covers_the_manifest():
+    """Every piece in the official manifest has a reviewed tier, the ones the gate skips today too (tools/build_catalog.py
+    fails a song without one)."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    if not (root / "data" / "catalog" / "sources.json").exists():
+        pytest.skip("needs the Quest Piano Trainer repository's data/catalog (not in the published pianopipe mirror)")
+    known = load_known(root / "pipeline" / "data" / "known.csv")
+    manifest = json.loads((root / "data" / "catalog" / "sources.json").read_text(encoding="utf-8"))
+    assert [e["id"] for e in manifest if e["id"] not in known] == []
+    assert set(known) <= {e["id"] for e in manifest}
+    assert all(0 <= v <= 0.99 for v in known.values())
 
 
 def test_load_ignores_unknown_fields_and_accepts_missing_optional_ones(tmp_path):

@@ -6,8 +6,10 @@ import pytest
 from pianopipe import midi_io
 from pianopipe.catalog import validate
 from pianopipe.cli import main
-from pianopipe.fingering import assign_fingering
-from pianopipe.fingering_eval import CASES, evaluate, pitch, run_case
+from pianopipe.fingering import assign_fingering, margins, search
+from pianopipe.fingering_eval import (
+    CASES, Case, Piece, evaluate, evaluate_printed, lint, lint_report, pitch, run_case, wrong_hand_chords,
+)
 from pianopipe.model import Note
 from pianopipe.process import process_file
 
@@ -90,11 +92,47 @@ def test_fingers_round_trip_through_app_midi(tmp_path):
     assert got == sorted((n.start, n.pitch, n.finger) for n in notes)
 
 
+def test_printed_fingers_are_marked_and_old_files_read_as_computed(tmp_path):
+    """A printed finger has a "printed" text event right before its finger text; a file without marks (every level
+    written before 2026-10-28) reads as all computed, and a reader that only keeps the last text still gets the finger."""
+    notes = [
+        Note(0, TPB, 60, hand="R", finger=1, printed=True), Note(0, TPB, 64, hand="R", finger=3),
+        Note(TPB, 2 * TPB, 62, hand="R", finger=2, printed=True), Note(0, TPB, 48, hand="L", finger=5),
+    ]
+    path = tmp_path / "p.mid"
+    midi_io.write_app_midi(path, TPB, [], notes)
+    rh = [m for m in mido.MidiFile(str(path)).tracks[1] if m.type in ("text", "note_on")]
+    assert [m.text if m.type == "text" else m.note for m in rh] == ["printed", "f1", 60, "f3", 64, "printed", "f2", 62]
+    song = midi_io.load(path)
+    got = sorted((n.start, n.pitch, n.finger, n.printed) for t in song.tracks for n in t.notes)
+    assert got == sorted((n.start, n.pitch, n.finger, n.printed) for n in notes)
+    # Only right before the finger text: a mark followed by other text, or a mark with no finger, marks nothing.
+    odd = mido.MidiFile(type=1, ticks_per_beat=TPB)
+    odd.tracks.append(mido.MidiTrack([
+        mido.MetaMessage("text", text="printed"), mido.MetaMessage("text", text="hello"), mido.MetaMessage("text", text="f2"),
+        mido.Message("note_on", note=60, velocity=80), mido.MetaMessage("text", text="printed"),
+        mido.Message("note_on", note=62, velocity=80, time=TPB), mido.Message("note_off", note=60, velocity=0),
+        mido.Message("note_off", note=62, velocity=0, time=TPB),
+    ]))
+    odd.save(str(tmp_path / "odd.mid"))
+    got = [(n.pitch, n.finger, n.printed) for n in midi_io.load(tmp_path / "odd.mid").tracks[0].notes]
+    assert got == [(60, 2, False), (62, None, False)]
+
+
+def test_assign_fingering_marks_the_printed_fingers_it_kept():
+    out = assign_fingering(_scale([2, None, 4, None, None]), TPB)
+    assert [n.printed for n in out] == [True, False, True, False, False]
+    chord = [Note(0, TPB, 60, hand="R", finger=1), Note(0, TPB, 64, hand="R", finger=1)]  # can't both be kept
+    out = assign_fingering(chord, TPB)
+    assert [n.printed for n in out] == [n.finger == 1 for n in out] and not all(n.printed for n in out)
+
+
 def test_unfingered_notes_write_no_text_events(tmp_path):
     path = tmp_path / "plain.mid"
     midi_io.write_app_midi(path, TPB, [], [Note(0, TPB, 60, hand="R")])
     assert not any(m.type == "text" for t in mido.MidiFile(str(path)).tracks for m in t)
     assert midi_io.read_finger("f6") is None and midi_io.read_finger("fingering") is None
+    assert midi_io.read_finger(midi_io.PRINTED_TEXT) is None
 
 
 def test_process_fingers_every_level_and_flags_it(tmp_path):
@@ -108,6 +146,19 @@ def test_process_fingers_every_level_and_flags_it(tmp_path):
         assert len(notes) == lv.notes and all(n.finger in (1, 2, 3, 4, 5) for n in notes)
     plain = process_file(src, tmp_path / "plain", fingering=False)
     assert not any(lv.fingering for lv in plain.levels)
+
+
+def test_process_marks_the_sources_printed_fingers(tmp_path):
+    """A source's printed fingers (here Mutopia's, as meta fingers) come out marked printed in the full level; the rest
+    of its fingers are computed."""
+    rh, lh = two_hand_piece(4)
+    src = make_midi(tmp_path / "piece.mid", [{"name": "RH", "notes": rh}, {"name": "LH", "notes": lh, "channel": 1}])
+    given = [[0, 72, 5], [TPB, 74, 4], [0, 48, 5]]  # odd but playable choices
+    entry = process_file(src, tmp_path / "out", meta={"fingers": given})
+    full = midi_io.load(tmp_path / "out" / entry.levels[-1].url)
+    notes = [n for t in full.tracks for n in t.notes]
+    assert sorted((n.start, n.pitch, n.finger) for n in notes if n.printed) == sorted(map(tuple, given))
+    assert all(n.finger for n in notes)
 
 
 def test_catalog_json_fingering_flag(tmp_path):
@@ -154,3 +205,52 @@ def test_printed_fingering_that_doesnt_fit_is_dropped_there_only():
     out = assign_fingering(chord + tune, TPB)
     assert out[0].finger != out[1].finger
     assert [n.finger for n in out[2:]] == [3, 2]
+
+
+# Für Elise's opening twice, once from a rest and once after a leap from E4: the search alone fingers the second
+# 5-4-5-4-5-2-4-3-1 and the first 3-2-3-2-3-1-3-2-1.
+_ELISE = "E5:0.25 D#5:0.25 E5:0.25 D#5:0.25 E5:0.25 B4:0.25 D5:0.25 C5:0.25 A4:0.5"
+
+
+def _elise_twice():
+    case = Case("elise", "R", f"{_ELISE} r:0.25 C4:0.25 E4:0.25 A4:0.25 B4:0.5 r:0.25 E4:0.25 {_ELISE}", " ".join(["1"] * 23))
+    return case.build()[0]
+
+
+def test_a_passage_that_comes_back_keeps_its_fingering():
+    notes = _elise_twice()
+    plain = search(notes, "R", TPB)[0]
+    assert [plain[i] for i in range(9)] != [plain[i] for i in range(14, 23)], "the case no longer shows the problem"
+    out = [n.finger for n in assign_fingering(notes, TPB)]
+    assert out[:9] == out[14:]
+
+
+def test_margins_match_the_search_and_are_never_negative():
+    notes = _elise_twice()
+    fingers, margin = margins(notes, "R", TPB)
+    plain = search(notes, "R", TPB)[0]
+    assert fingers == plain
+    assert all(m >= 0 for m in margin.values())
+    assert margins([Note(0, TPB, 60, hand="R")], "R", TPB)[1][0] == 0  # one white key: 1, 2 or 3, a guess
+    up_down = [Note(i * TPB, (i + 1) * TPB, p, hand="R") for i, p in enumerate((60, 62, 64, 65, 67, 65, 64, 62, 60))]
+    assert min(margins(up_down, "R", TPB)[1].values()) > 4  # C position: every finger is clear
+
+
+def test_printed_evaluation_and_lint_count_what_they_see():
+    notes = _scale([1, None, 3, None, 4])  # 4 on G: the search's 5 there is "within one"
+    piece = Piece("scale", TPB, notes)
+    tallies = evaluate_printed([piece])
+    assert tallies["all"].n == 3 and tallies["all"].near == 3
+    assert tallies["all"].exact in (2, 3)
+    chord = Piece("crossed", TPB, [Note(0, TPB, 60, hand="R", finger=3), Note(0, TPB, 64, hand="R", finger=1)])
+    assert wrong_hand_chords([piece, chord]) == (1, 1)
+    c = lint([Piece("plain", TPB, _elise_twice())])
+    assert c["generated fingers"] == 23 and c["repeated passages"] >= 1 and c["repeat fingered differently"] == 0
+    assert "repeats fingered differently: 0.0%" in lint_report(c)
+
+
+def test_lint_leaves_the_editions_own_chords_alone():
+    # 2-3 over a fifth is beyond the practical span, but the edition prints it: not the model's doing.
+    chord = [Note(0, TPB, 60, hand="R", finger=2), Note(0, TPB, 67, hand="R", finger=3)]
+    c = lint([Piece("printed", TPB, chord)])
+    assert c["generated fingers"] == 0 and c["chord beyond the practical span"] == 0

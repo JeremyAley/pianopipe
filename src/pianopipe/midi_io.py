@@ -3,7 +3,8 @@
 App-ready MIDI (see docs/formats.md) is a type 1 file with three tracks:
 track 0 holds tempo/time-signature meta events, track 1 is named "RH"
 (channel 0) and track 2 is named "LH" (channel 1). A note with a finger gets
-a text event "f1".."f5" right before its note-on.
+a text event "f1".."f5" right before its note-on, and a finger printed in the
+score has a "printed" text event right before that.
 """
 
 from __future__ import annotations
@@ -26,9 +27,10 @@ def load(path: str | Path) -> Song:
         info = TrackInfo(index=index, name="")
         tick = 0
         programs: dict[int, int] = defaultdict(int)
-        # (channel, pitch) -> queue of (start tick, velocity, program, finger); FIFO pairing.
+        # (channel, pitch) -> queue of (start tick, velocity, program, finger, printed); FIFO pairing.
         open_notes: dict[tuple[int, int], deque] = defaultdict(deque)
         finger = None  # from a finger text event, for the next note-on
+        printed = mark = False  # the finger was marked printed / the last text event was the mark
         for msg in track:
             tick += msg.time
             if msg.is_meta:
@@ -38,27 +40,33 @@ def load(path: str | Path) -> Song:
                     song.meta.append((tick, msg.copy(time=0)))
                 elif msg.type == "text":
                     finger = read_finger(msg.text)
+                    printed = mark and finger is not None
+                    mark = msg.text.strip() == PRINTED_TEXT
                 continue
             if msg.type == "program_change":
                 programs[msg.channel] = msg.program
             elif msg.type == "note_on" and msg.velocity > 0:
-                open_notes[(msg.channel, msg.note)].append((tick, msg.velocity, programs[msg.channel], finger))
-                finger = None
+                open_notes[(msg.channel, msg.note)].append((tick, msg.velocity, programs[msg.channel], finger, printed))
+                finger, printed, mark = None, False, False
             elif msg.type in ("note_off", "note_on"):
                 queue = open_notes.get((msg.channel, msg.note))
                 if queue:
-                    start, vel, prog, fing = queue.popleft()
+                    start, vel, prog, fing, pr = queue.popleft()
                     if tick > start:
-                        info.notes.append(Note(start, tick, msg.note, vel, None, index, msg.channel, prog, fing))
+                        info.notes.append(Note(start, tick, msg.note, vel, None, index, msg.channel, prog, fing, pr))
         # Close notes that never got a note-off at the end of the track.
         for (channel, pitch), queue in open_notes.items():
-            for start, vel, prog, fing in queue:
+            for start, vel, prog, fing, pr in queue:
                 if tick > start:
-                    info.notes.append(Note(start, tick, pitch, vel, None, index, channel, prog, fing))
+                    info.notes.append(Note(start, tick, pitch, vel, None, index, channel, prog, fing, pr))
         info.notes.sort(key=lambda n: (n.start, n.pitch))
         song.tracks.append(info)
     song.meta.sort(key=lambda e: e[0])
     return song
+
+
+# The text event right before a finger's that marks it printed in the score (docs/formats.md).
+PRINTED_TEXT = "printed"
 
 
 def finger_text(finger: int) -> str:
@@ -75,12 +83,14 @@ def read_finger(text: str) -> int | None:
 
 def _events_to_track(name: str, channel: int, notes: list[Note]) -> mido.MidiTrack:
     # (tick, order, pitch, message): note-offs sort before note-ons at the same tick so repeated notes retrigger,
-    # and a finger's text event sorts right before its own note-on.
+    # and a finger's text event sorts right before its own note-on, with the printed mark right before that.
     events: list[tuple[int, int, int, mido.Message]] = []
     for n in notes:
         if n.finger is not None:
-            events.append((n.start, 1, n.pitch, mido.MetaMessage("text", text=finger_text(n.finger))))
-        events.append((n.start, 2, n.pitch, mido.Message("note_on", channel=channel, note=n.pitch, velocity=max(1, n.velocity))))
+            if n.printed:
+                events.append((n.start, 1, n.pitch, mido.MetaMessage("text", text=PRINTED_TEXT)))
+            events.append((n.start, 2, n.pitch, mido.MetaMessage("text", text=finger_text(n.finger))))
+        events.append((n.start, 3, n.pitch, mido.Message("note_on", channel=channel, note=n.pitch, velocity=max(1, n.velocity))))
         events.append((n.end, 0, n.pitch, mido.Message("note_off", channel=channel, note=n.pitch, velocity=0)))
     events.sort(key=lambda e: (e[0], 0 if e[1] == 0 else 1, e[2], e[1]))
     track = mido.MidiTrack()

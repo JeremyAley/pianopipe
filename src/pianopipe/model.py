@@ -19,6 +19,7 @@ class Note:
     channel: int = 0  # source channel
     program: int = 0  # GM program (0-based) active when the note started
     finger: int | None = None  # 1 (thumb) to 5 (little finger), see fingering.py
+    printed: bool = False  # the finger is the score's own (printed in its source), not computed: docs/formats.md
 
     def with_hand(self, hand: Hand | None) -> "Note":
         return replace(self, hand=hand)

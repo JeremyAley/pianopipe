@@ -23,13 +23,19 @@ the order its notes are written, `3|4` when either is fine.
 
 from __future__ import annotations
 
+import json
 import re
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
+from pathlib import Path
 
-from .fingering import assign_fingering
+from .difficulty import make_levels
+from .fingering import FINGERS, MIRROR, REPEAT_WINDOW, SPANS, _black, _onsets, assign_fingering, margins
 from .model import Note
+from .process import load_notes
 
 TPB = 480
+MARGIN_BUCKETS = (0, 1, 2, 4, 8)
 _NAME = re.compile(r"^([A-G])([#b]?)(-?\d)$")
 _STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
@@ -152,6 +158,184 @@ def run_case(case: Case) -> Result:
 
 def evaluate(cases: list[Case] | None = None) -> list[Result]:
     return [run_case(c) for c in (cases or CASES)]
+
+
+def printed_pieces(raw: Path, sources: Path, fingering_dir: Path | None = None, only_printed: bool = True) -> list[Piece]:
+    """The catalog's pieces as the build reads them (hands, printed fingers on `Note.finger`): every manifest entry
+    whose file is under `raw`, with the Mutopia fingers from `fingering_dir` (data/catalog/fingering). With
+    `only_printed`, just the pieces that have printed fingers."""
+    out = []
+    for e in json.loads(Path(sources).read_text(encoding="utf-8")):
+        src = Path(raw) / e["file"]
+        if not src.exists():
+            continue
+        song, notes, _, _ = load_notes(src, satb=bool(e.get("satb")))
+        f = Path(fingering_dir) / f"{e['id']}.json" if fingering_dir else None
+        if f is not None and f.exists():
+            given = {(t, p): fg for t, p, fg in json.loads(f.read_text(encoding="utf-8"))["fingers"]}
+            notes = [replace(n, finger=given.get((n.start, n.pitch), n.finger)) for n in notes]
+        if not only_printed or any(n.finger in FINGERS for n in notes):
+            out.append(Piece(e["id"], song.ticks_per_beat, notes, song.meta))
+    return out
+
+
+@dataclass
+class Piece:
+    id: str
+    ticks_per_beat: int
+    notes: list[Note]
+    meta: list | tuple = ()  # the song's tempo, time and key signatures, which make_levels reads
+
+
+@dataclass
+class Tally:
+    n: int = 0
+    exact: int = 0
+    near: int = 0  # within one finger
+
+    def add(self, printed: int, got: int) -> None:
+        self.n += 1
+        self.exact += printed == got
+        self.near += abs(printed - got) <= 1
+
+
+def evaluate_printed(pieces: list[Piece]) -> dict[str, Tally]:
+    """Generated against printed fingers: each piece fingered as if it had none (assign_fingering, as the catalog
+    fingers a piece without them), scored on the notes the edition fingers, by kind of spot. `margin a-b` groups the
+    notes by search margin (fingering.margins), the model's own confidence."""
+    tallies: dict[str, Tally] = {}
+    for piece in pieces:
+        got = assign_fingering([replace(n, finger=None) for n in piece.notes], piece.ticks_per_beat)
+        by_note = {id(n): g.finger for n, g in zip(piece.notes, got)}
+        for hand in ("R", "L"):
+            hn = sorted((n for n in piece.notes if n.hand == hand), key=lambda n: (n.start, n.pitch))
+            _, margin = margins([replace(n, finger=None) for n in hn], hand, piece.ticks_per_beat)
+            onsets = _onsets(hn, piece.ticks_per_beat)
+            for k, chord in enumerate(onsets):
+                for i in chord:
+                    n = hn[i]
+                    if n.finger not in FINGERS:
+                        continue
+                    kinds = ["all", f"hand {hand}", "chord" if len(chord) > 1 else "single", "black key" if _black(n.pitch) else "white key"]
+                    if k and len(chord) == 1 and len(onsets[k - 1]) == 1:
+                        prev = hn[onsets[k - 1][0]]
+                        d = (n.pitch - prev.pitch) * (1 if hand == "R" else -1)
+                        kinds.append("repeated note" if d == 0 else "step" if abs(d) <= 2 else "skip" if abs(d) <= 7 else "leap")
+                        if prev.finger in FINGERS and d * (n.finger - prev.finger) < 0:
+                            kinds.append("printed crossing")
+                    if n.finger == 1 and _black(n.pitch):
+                        kinds.append("printed thumb on black")
+                    lo = max((b for b in MARGIN_BUCKETS if b <= margin[i]), default=0)
+                    kinds.append(f"margin {lo}+")
+                    for kind in kinds:
+                        tallies.setdefault(kind, Tally()).add(n.finger, by_note[id(n)])
+    return tallies
+
+
+def wrong_hand_chords(pieces: list[Piece]) -> tuple[int, int]:
+    """(onsets with two or more printed fingers in one hand, those whose printed fingers don't rise with the pitch in
+    that hand): an edition's chord that the hand can't play as split is a note from the other hand."""
+    total = wrong = 0
+    for piece in pieces:
+        for hand, sign in (("R", 1), ("L", -1)):
+            hn = sorted((n for n in piece.notes if n.hand == hand), key=lambda n: (n.start, n.pitch))
+            for chord in _onsets(hn, piece.ticks_per_beat):
+                fingers = [hn[i].finger for i in sorted(chord, key=lambda i: sign * hn[i].pitch) if hn[i].finger in FINGERS]
+                if len(fingers) > 1:
+                    total += 1
+                    wrong += any(a >= b for a, b in zip(fingers, fingers[1:]))
+    return total, wrong
+
+
+def lint(pieces: list[Piece], levels: bool = False) -> Counter:
+    """Generated fingering checked against standard practice, on every piece (and with `levels`, every level as the
+    catalog makes it): counts of spots a teacher would question. Only generated fingers count (printed ones are the
+    edition's); legato pairs are single notes with less than a quarter beat between them, within a fifth."""
+    c: Counter = Counter()
+    for piece in pieces:
+        tpb = piece.ticks_per_beat
+        for notes in (make_levels(piece.notes, tpb, piece.meta).values() if levels else [piece.notes]):
+            fingered = assign_fingering(notes, tpb)
+            for hand in ("R", "L"):
+                hn = sorted((n for n in fingered if n.hand == hand), key=lambda n: (n.start, n.pitch))
+                if hn:
+                    _lint_hand(hn, hand, tpb, c)
+    return c
+
+
+def _lint_hand(hn: list[Note], hand: str, tpb: int, c: Counter) -> None:
+    rp = (lambda p: p) if hand == "R" else (lambda p: MIRROR - p)
+    onsets = [[hn[i] for i in chord] for chord in _onsets(hn, tpb)]
+    c["generated fingers"] += sum(not n.printed for n in hn)
+    for k, chord in enumerate(onsets):
+        if len(chord) > 1:
+            if all(n.printed for n in chord):
+                continue  # the edition's chord
+            low, high = min(chord, key=lambda n: rp(n.pitch)), max(chord, key=lambda n: rp(n.pitch))
+            span = rp(high.pitch) - rp(low.pitch)
+            if span > 16:
+                c["chord over a tenth in one hand (hand split)"] += 1
+            elif low.finger < high.finger and span > SPANS[(low.finger, high.finger)][5]:
+                c["chord beyond the practical span"] += 1
+            continue
+        b = chord[0]
+        if b.finger == 1 and _black(b.pitch) and not b.printed:
+            near = [o[0] for o in (onsets[k - 1] if k else [], onsets[k + 1] if k + 1 < len(onsets) else [])
+                    if len(o) == 1 and abs(o[0].pitch - b.pitch) <= 4 and not _black(o[0].pitch)]
+            if near:
+                c["thumb on a black key in a line"] += 1
+        if not k or len(onsets[k - 1]) != 1:
+            continue
+        a = onsets[k - 1][0]
+        d = rp(b.pitch) - rp(a.pitch)
+        if (a.printed and b.printed) or b.start - a.end >= max(1, tpb // 4) or abs(d) > 7:
+            continue
+        c["legato pairs"] += 1
+        if d and d * (b.finger - a.finger) < 0:
+            lo, hi = sorted((a.finger, b.finger))
+            c["thumb crossing" if lo == 1 and hi < 5 else "5 crossing the thumb" if lo == 1 else "finger over finger"] += 1
+        if d and a.finger == b.finger:
+            c["same finger on two keys legato"] += 1
+        if d and a.finger != b.finger:
+            lo, hi = sorted((a.finger, b.finger))
+            span = abs(d) if (b.finger > a.finger) == (d > 0) else -abs(d)
+            if not SPANS[(lo, hi)][0] <= span <= SPANS[(lo, hi)][5]:
+                c["step beyond the practical span"] += 1
+    # The same REPEAT_WINDOW onsets (pitches and rhythm) coming back with other fingers than the first time.
+    seen: dict[tuple, tuple] = {}
+    for k in range(len(onsets) - REPEAT_WINDOW + 1):
+        run = onsets[k:k + REPEAT_WINDOW]
+        t0 = run[0][0].start
+        sig = tuple((n.start - t0, n.pitch) for o in run for n in o)
+        fingers = tuple(n.finger for o in run for n in o)
+        if sig in seen:
+            c["repeated passages"] += 1
+            c["repeat fingered differently"] += fingers != seen[sig]
+        else:
+            seen[sig] = fingers
+
+
+def printed_report(tallies: dict[str, Tally], wrong_hand: tuple[int, int]) -> str:
+    lines = [f"{'spot':26} {'printed':>7} {'same':>6} {'within one':>10}"]
+    order = ["all", "hand R", "hand L", "single", "chord", "white key", "black key", "step", "skip", "leap",
+             "repeated note", "printed crossing", "printed thumb on black"] + [f"margin {b}+" for b in MARGIN_BUCKETS]
+    for kind in (k for k in order if k in tallies):
+        t = tallies[kind]
+        lines.append(f"{kind:26} {t.n:7d} {t.exact / t.n:6.1%} {t.near / t.n:10.1%}")
+    total, wrong = wrong_hand
+    lines.append(f"printed chords against the hand split: {wrong} of {total}")
+    return "\n".join(lines)
+
+
+def lint_report(c: Counter) -> str:
+    n = c["generated fingers"]
+    lines = [f"{n} generated fingers, {c['legato pairs']} legato pairs"]
+    for kind, v in sorted(c.items()):
+        if kind not in ("generated fingers", "legato pairs", "repeated passages"):
+            lines.append(f"{kind:44} {v:6d}  {1000 * v / max(1, n):6.2f} per 1000")
+    lines.append(f"repeats fingered differently: {c['repeat fingered differently'] / max(1, c['repeated passages']):.1%}"
+                 f" of {c['repeated passages']} repeated {REPEAT_WINDOW}-onset passages")
+    return "\n".join(lines)
 
 
 def report(results: list[Result]) -> str:

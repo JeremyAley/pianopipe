@@ -7,10 +7,9 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, engrave, grading, midi_io
+from . import __version__, engrave, grading, midi_io, omr_repair
 from .catalog import verify
-from .fingering_eval import evaluate as evaluate_fingering
-from .fingering_eval import report as fingering_report
+from . import fingering_eval
 from .hands import hand_accuracy, split_hands
 from .process import build_catalog, process_file
 from .quality import OFFICIAL
@@ -66,7 +65,8 @@ def _engrave(args) -> int:
 
 
 def _process(args) -> int:
-    entry = process_file(args.file, args.out, sheets=args.sheets)
+    melody = args.melody if args.melody in (None, True) else [m for m in args.melody.split(",") if m.strip()]
+    entry = process_file(args.file, args.out, {"melody": melody} if melody else None, sheets=args.sheets)
     print(json.dumps(entry.__dict__, default=lambda o: o.__dict__, indent=2))
     return 0
 
@@ -90,8 +90,22 @@ def _eval_hands(args) -> int:
 
 
 def _eval_fingering(args) -> int:
-    """Score automatic fingering against the hand-written textbook cases in fingering_eval.py."""
-    print(fingering_report(evaluate_fingering()))
+    """Score automatic fingering against the hand-written textbook cases in fingering_eval.py, and with a catalog's
+    files, against its printed fingers (--printed) and standard practice (--lint)."""
+    print(fingering_eval.report(fingering_eval.evaluate()))
+    if args.printed or args.lint:
+        if not args.raw or not args.sources:
+            print("--printed and --lint need --raw and --sources")
+            return 1
+        fingers = Path(args.fingering) if args.fingering else None
+        pieces = fingering_eval.printed_pieces(Path(args.raw), Path(args.sources), fingers, only_printed=not args.lint)
+    if args.printed:
+        printed = [p for p in pieces if any(n.finger in fingering_eval.FINGERS for n in p.notes)]
+        print(f"\ngenerated against printed fingers ({len(printed)} pieces):")
+        print(fingering_eval.printed_report(fingering_eval.evaluate_printed(printed), fingering_eval.wrong_hand_chords(printed)))
+    if args.lint:
+        print(f"\nstandard-practice checks ({len(pieces)} pieces{', every level' if args.levels else ''}):")
+        print(fingering_eval.lint_report(fingering_eval.lint(pieces, args.levels)))
     return 0
 
 
@@ -117,6 +131,28 @@ def _grade_fit(args) -> int:
     return 0
 
 
+def _omr_repair(args) -> int:
+    exports = omr_repair.export_paths(args.export, args.omr)
+    report = omr_repair.repair(exports if len(exports) > 1 else exports[0], args.omr, args.out)
+    print(report.summary())
+    if args.json:
+        Path(args.json).write_text(json.dumps(report.to_json(), indent=1) + "\n", encoding="utf-8")
+    print(f"wrote {args.out}")
+    return 0
+
+
+def _pdf_check(args) -> int:
+    from . import pdf_check  # needs pymupdf: the [omr] extra
+
+    report = pdf_check.check(args.pdf, args.musicxml, args.out, args.repair_report)
+    print(report.summary())
+    if args.json:
+        Path(args.json).write_text(json.dumps(report.to_json(), indent=1) + "\n", encoding="utf-8")
+    if args.out:
+        print(f"wrote {args.out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pianopipe", description="Quest Piano Trainer content pipeline")
     parser.add_argument("--version", action="version", version=f"pianopipe {__version__}")
@@ -130,6 +166,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("file")
     p.add_argument("--out", default="out")
     p.add_argument("--sheets", action="store_true", help="also engrave sheet music for every level (pianopipe[sheet])")
+    p.add_argument("--melody", nargs="?", const=True, metavar="PARTS",
+                   help="MusicXML: merge the voice or melody parts (or these parts, by name or id, comma-separated) "
+                   "into the right hand as its top voice")
     p.set_defaults(func=_process)
 
     p = sub.add_parser("engrave", help="sheet music pages and bar map for one app-ready level file (pianopipe[sheet])")
@@ -165,7 +204,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("dir")
     p.set_defaults(func=_eval_hands)
 
-    p = sub.add_parser("eval-fingering", help="score automatic fingering against hand-written textbook fingerings")
+    p = sub.add_parser("eval-fingering", help="score automatic fingering against textbook and printed fingerings")
+    p.add_argument("--printed", action="store_true", help="also score it against the catalog's printed fingers")
+    p.add_argument("--lint", action="store_true", help="also check every catalog piece against standard practice")
+    p.add_argument("--levels", action="store_true", help="with --lint, check every level, not only the full piece")
+    p.add_argument("--raw", help="folder the manifest's file paths are relative to (data/raw)")
+    p.add_argument("--sources", help="the catalog manifest (data/catalog/sources.json)")
+    p.add_argument("--fingering", help="Mutopia's printed fingers (data/catalog/fingering)")
     p.set_defaults(func=_eval_fingering)
 
     p = sub.add_parser("grade-fit", help="calibrate grades on the anchor pieces; writes the grade model and a fit report")
@@ -175,6 +220,23 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--report", required=True, help="where the fit report goes (pipeline/data/grade_fit.md)")
     p.add_argument("--model", default=str(grading.MODEL_JSON), help="where the model goes (default: the package's grade_model.json)")
     p.set_defaults(func=_grade_fit)
+
+    p = sub.add_parser("omr-repair", help="re-time the piano part of an Audiveris export from its .omr project's geometry")
+    p.add_argument("export", nargs="+", help="Audiveris's MusicXML export (.mxl); several movements (<song>.mvt1.mxl, "
+                   ".mvt2.mxl) are joined in order; a glob, or a folder for the exports named after the project")
+    p.add_argument("omr", help="the Audiveris project (.omr) it came from")
+    p.add_argument("-o", "--out", required=True, help="where the repaired MusicXML goes (.musicxml)")
+    p.add_argument("--json", help="also write the per-bar report as JSON (needs_review, reasons)")
+    p.set_defaults(func=_omr_repair)
+
+    p = sub.add_parser("pdf-check", help="check a MusicXML file bar by bar against the vector PDF it was read from, "
+                                         "and rewrite the bars that differ from it")
+    p.add_argument("pdf", help="the publisher's PDF (Finale, Sibelius or MuseScore export with real notation)")
+    p.add_argument("musicxml", help="the MusicXML read from it (omr-repair's output)")
+    p.add_argument("-o", "--out", help="write a copy with differing bars rewritten from the PDF (otherwise: audit only)")
+    p.add_argument("--json", help="also write the per-bar report as JSON (needs_review, found, filled, reasons)")
+    p.add_argument("--repair-report", help="omr-repair's JSON report: its needs_review bars that match the PDF are cleared")
+    p.set_defaults(func=_pdf_check)
 
     args = parser.parse_args(argv)
     return args.func(args)

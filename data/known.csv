@@ -1,0 +1,246 @@
+# Best known: how widely each official catalog piece is known, for the app's "Something I know" answer and its Best
+# known sort (docs/ui-and-themes.md 7.6.5, docs/formats.md). Read by pianopipe/catalog.py load_known (lines starting
+# with # are comments); tools/build_catalog.py puts the score on each song as `known`.
+#
+# tier, reviewed by hand (2026-10-27):
+#   4  nearly everyone knows the tune (nursery songs, the big carols, Fur Elise, the Entertainer, Clair de lune)
+#   3  most people would recognise it (the Minute Waltz, Maple Leaf Rag, Traumerei, most carols, folk standards)
+#   2  known to people who play, sing or listen to this music (hymns, Inventions, Album for the Young favourites)
+#   1  known mostly to piano students and teachers (Burgmuller Op. 100, most of Album for the Young, sonatinas)
+#   0  rarely heard outside its source
+# wikipedia: the English Wikipedia article of the work, or of the set it belongs to; empty when there is none (never
+#   the composer's article). Its page views order the pieces within a tier.
+# views: that article's page views in 2025 (users, all platforms), from the Wikimedia REST API, whose page view data
+#   is CC0; filled in by tools/known_views.py.
+# known = (tier + 0.95 * v) / 5, where v is log(views) scaled to 0-1 over the pieces with views (0 without): tier 4
+#   gives 0.80-0.99, and 0.6 or more means well known.
+id,tier,wikipedia,views
+away-in-a-manger,3,Away in a Manger,58840
+o-god-our-help-in-ages-past,2,"O God, Our Help in Ages Past",16486
+in-the-bleak-midwinter,3,In the Bleak Midwinter,143033
+good-king-wenceslas,3,Good King Wenceslas,175491
+mary-had-a-little-lamb,4,Mary Had a Little Lamb,149340
+silent-night,4,Silent Night,226644
+lo-how-a-rose-e-er-blooming,2,Es ist ein Ros entsprungen,48830
+frere-jacques,4,Frère Jacques,313961
+ode-to-joy,4,Ode to Joy,243191
+up-on-the-housetop,2,Up on the Housetop,16045
+jolly-old-st-nicholas,2,Jolly Old Saint Nicholas,20524
+it-is-well-with-my-soul,2,It Is Well with My Soul,177093
+angels-from-the-realms-of-glory,2,Angels from the Realms of Glory,12921
+blessed-assurance,2,Blessed Assurance,31150
+brahms-lullaby,4,Brahms' Lullaby,48393
+happy-birthday,4,Happy Birthday to You,793145
+o-come-o-come-emmanuel,3,"O Come, O Come, Emmanuel",118355
+god-rest-ye-merry-gentlemen,3,"God Rest Ye Merry, Gentlemen",101541
+the-holly-and-the-ivy,3,The Holly and the Ivy,38827
+schumann-op68-4-chorale,1,Album for the Young,12677
+abide-with-me,2,Abide with Me,102797
+praise-to-the-lord-the-almighty,2,"Praise to the Lord, the Almighty",17474
+o-christmas-tree,4,O Tannenbaum,105768
+we-three-kings,3,We Three Kings,61173
+deck-the-halls,4,Deck the Halls,109760
+london-bridge,4,London Bridge Is Falling Down,231105
+we-wish-you-a-merry-christmas,4,We Wish You a Merry Christmas,59139
+amazing-grace,4,Amazing Grace,422443
+o-come-all-ye-faithful,3,"O Come, All Ye Faithful",122347
+sakura-sakura,2,Sakura Sakura,42162
+auld-lang-syne,4,Auld Lang Syne,832497
+schumann-op68-2-soldiers-march,1,Album for the Young,12677
+simple-gifts,3,Simple Gifts,66685
+shall-we-gather-at-the-river,2,Shall We Gather at the River?,13372
+handel-sonatina-in-b-flat-major-hwv-585,0,,
+swing-low-sweet-chariot,3,"Swing Low, Sweet Chariot",141059
+joy-to-the-world,4,Joy to the World,127404
+strauss-blue-danube-theme,4,The Blue Danube,141425
+kalinka,3,Kalinka (1860 song),55869
+ding-dong-merrily-on-high,2,Ding Dong Merrily on High,31699
+shenandoah,3,Shenandoah (song),101700
+danny-boy,3,Danny Boy,224305
+twinkle-twinkle,4,"Twinkle, Twinkle, Little Star",514665
+row-row-row-your-boat,4,"Row, Row, Row Your Boat",115060
+angels-we-have-heard-on-high,3,Angels We Have Heard on High,49678
+anon-musette-bwv-anh-126,1,Notebook for Anna Magdalena Bach,24402
+holy-holy-holy,2,"Holy, Holy, Holy! Lord God Almighty",26716
+to-god-be-the-glory,2,To God Be the Glory,20120
+yankee-doodle,4,Yankee Doodle,311171
+korobeiniki,4,Korobeiniki,85110
+camptown-races,3,Camptown Races,91547
+oh-susanna,3,Oh! Susanna,87712
+anon-polonaise-in-d-minor-bwv-anh-128,0,Notebook for Anna Magdalena Bach,24402
+petzold-minuet-in-g-major-bwv-anh-114,3,Minuets in G major and G minor,33448
+petzold-minuet-in-g-minor-bwv-anh-115,2,Minuets in G major and G minor,33448
+scarborough-fair,3,Scarborough Fair (ballad),312920
+clementi-opus36-1-1,2,,
+funiculi-funicula,3,"Funiculì, Funiculà",107704
+burgmuller-arabesque,2,,
+anon-minuet-in-b-flat-major-bwv-anh-118,0,Notebook for Anna Magdalena Bach,24402
+anon-polonaise-in-f-major-bwv-anh-117a,0,Notebook for Anna Magdalena Bach,24402
+once-in-royal-david-s-city,2,Once in Royal David's City,25812
+greensleeves,4,Greensleeves,253131
+burgmuller-tendre-fleur,1,,
+a-mighty-fortress-is-our-god,2,A Mighty Fortress Is Our God,48811
+o-little-town-of-bethlehem,3,O Little Town of Bethlehem,40842
+mozart-allegro-k3,0,,
+hark-the-herald-angels-sing,3,Hark! The Herald Angels Sing,113902
+chpn-p7,2,Preludes (Chopin),48193
+when-the-saints,4,When the Saints Go Marching In,150325
+schumann-op68-5-little-piece,1,Album for the Young,12677
+the-first-noel,3,The First Noel,66896
+what-child-is-this,3,What Child Is This?,59199
+it-came-upon-the-midnight-clear,2,It Came Upon the Midnight Clear,33226
+burgmuller-progres,1,,
+jingle-bells,4,Jingle Bells,381785
+schumann-op68-1-melody,1,Album for the Young,12677
+anon-polonaise-in-g-minor-bwv-anh-119,0,Notebook for Anna Magdalena Bach,24402
+eternal-father-strong-to-save,2,"Eternal Father, Strong to Save",63899
+burgmuller-innocence,1,,
+mozart-minuet-k2,1,,
+mozart-sonata-k331-theme,2,Piano Sonata No. 11 (Mozart),72045
+burgmuller-la-babillarde,1,,
+handel-sarabande-hwv437,3,Keyboard suite in D minor (HWV 437),23940
+burgmuller-la-candeur,1,,
+burgmuller-petite-reunion,1,,
+anon-minuet-in-a-minor-bwv-anh-120,0,Notebook for Anna Magdalena Bach,24402
+tchaikovsky-op39-16-old-french-song,1,,
+schumann-op68-6-poor-orphan,1,Album for the Young,12677
+pleyel-rondo,0,,
+handel-menuet,0,,
+beethoven-sonatina-anh5-1-1,1,,
+anon-minuet-in-g-major-bwv-anh-116,0,Notebook for Anna Magdalena Bach,24402
+anon-minuet-in-f-major-bwv-anh-113,0,Notebook for Anna Magdalena Bach,24402
+wanhal-rondo-op42-1,0,,
+schumann-op68-10-the-happy-farmer,2,Album for the Young,12677
+schumann-op68-8-the-wild-horseman,2,Album for the Young,12677
+schumann-op68-3-humming-song,1,Album for the Young,12677
+handel-gavotte,0,,
+anon-march-in-e-flat-major-bwv-anh-127,0,Notebook for Anna Magdalena Bach,24402
+tchaikovsky-op39-5-wooden-soldiers,1,,
+anon-minuet-in-c-minor-bwv-anh-121,0,Notebook for Anna Magdalena Bach,24402
+o-sole-mio,3,'O sole mio,87868
+bach-little-prelude-bwv-924a,1,,
+andre-sonatina-op34-1,0,,
+kuhlau-sonatina-op20-1-2,0,,
+burgmuller-pastorale,1,,
+schumann-op68-7-hunting-song,1,Album for the Young,12677
+streabbog-golden-stars-waltz,0,,
+coventry-carol,2,Coventry Carol,54140
+burgmuller-la-styrienne,1,,
+burgmuller-courant-limpide,1,,
+tchaikovsky-op39-1-morning-prayer,1,,
+in-dulci-jubilo-bwv368,2,In dulci jubilo,29482
+satie-gymnopedie-3,2,Gymnopédies,163972
+chopin-prelude-op28-20,2,"Prelude, Op. 28, No. 20 (Chopin)",11689
+burgmuller-la-chasse,1,,
+rameau-tambourin,1,,
+burgmuller-ballade,1,,
+schumann-op15-4-pleading-child,1,Kinderszenen,42967
+bach-invention-8-bwv-779,1,Inventions and Sinfonias (Bach),25376
+schumann-op68-16-first-loss,1,Album for the Young,12677
+bach-little-prelude-bwv-926,1,,
+burgmuller-l-adieu,1,,
+brahms-waltz-no-15-op-39,2,"Sixteen Waltzes, Op. 39 (Brahms)",8438
+mendel-op19-6,1,Songs Without Words,33370
+bach-invention-4-bwv-775,1,Inventions and Sinfonias (Bach),25376
+mozart-sonata-facile-k545-3,2,Piano Sonata No. 16 (Mozart),31743
+burgmuller-consolation,1,,
+bach-invention-13-bwv-784,1,Inventions and Sinfonias (Bach),25376
+burg-perlen,0,,
+bach-prelude-in-c-major-bwv-846,3,"Prelude and Fugue in C major, BWV 846",32832
+bach-invention-1-bwv-772,2,Inventions and Sinfonias (Bach),25376
+scn15-1,2,Kinderszenen,42967
+elise,4,Für Elise,232593
+chpn-p4,3,"Prelude, Op. 28, No. 4 (Chopin)",26907
+grieg-album-leaf-op12-7,1,Lyric Pieces,15589
+schumann-op15-2-curious-story,1,Kinderszenen,42967
+haydn-sonata-hob-xvi-28-menuetto,0,,
+beethoven-sonata-op49-2-2,2,Piano Sonata No. 20 (Beethoven),9385
+satie-gymnopedie-1-pdmx,4,Gymnopédies,163972
+schumann-op15-5-happy-enough,1,Kinderszenen,42967
+albeniz-asturias,3,Asturias (Leyenda),30002
+kuhlau-sonatina-op20-1-1,1,,
+grieg-arietta-op12-1,1,Lyric Pieces,15589
+chopin-nocturne-c-sharp-minor,3,"Nocturne in C-sharp minor, Op. posth. (Chopin)",47939
+beethoven-minuet-woo-82,1,,
+field-nocturne-5,1,,
+kuhlau-sonatina-op20-1-3,0,,
+scn15-7,3,Träumerei,42967
+debussy-flaxen-hair,3,La fille aux cheveux de lin,29326
+chopin-valse-op-64-no-1-minute-waltz,3,Minute Waltz,22468
+sousa-el-capitan,2,El Capitan (march),3437
+beethoven-turkish-march-rubinstein,3,The Ruins of Athens,14346
+czerny-op840-3,0,,
+bach-prelude-in-c-minor-bwv-847,2,"Prelude and Fugue in C minor, BWV 847",8006
+chopin-prelude-op28-6,1,Preludes (Chopin),48193
+mozart-sonata-facile-k545-2,2,Piano Sonata No. 16 (Mozart),31743
+beethoven-sonata-op49-2-1,1,Piano Sonata No. 20 (Beethoven),9385
+beethoven-sonata-op49-1-1,1,Piano Sonata No. 19 (Beethoven),9385
+mz-545-1,3,Piano Sonata No. 16 (Mozart),31743
+schumm-3,2,Moments musicaux,838
+sousa-the-washington-post,2,The Washington Post (march),22539
+grieg-wanderer,1,Lyric Pieces,15589
+mozart-variations-k265,3,"Twelve Variations on ""Ah vous dirai-je, Maman""",33221
+turpin-the-st-louis-rag,1,,
+czerny-op840-1,0,,
+satie-gnossienne-1,3,Gnossiennes,92147
+joplin-peacherine-rag,1,,
+joplin-sun-flower-slow-drag,1,,
+joplin-elite-syncopations,2,Elite Syncopations,2111
+joplin-the-entertainer,4,The Entertainer (rag),90195
+grieg-zwerge,1,Lyric Pieces,15589
+chopin-nocturne-op-9-no-2,3,"Nocturnes, Op. 9 (Chopin)",77802
+chopin-waltz-op69-2,2,"Waltzes, Op. 69 (Chopin)",1246
+sousa-the-stars-and-stripes-forever,4,The Stars and Stripes Forever,76074
+sousa-the-liberty-bell-march,3,The Liberty Bell (march),18537
+joplin-maple-leaf-rag,3,Maple Leaf Rag,51540
+dvorak-humoresque,3,Humoresques (Dvořák),20936
+joplin-the-easy-winners,2,The Easy Winners,3321
+chp-op18,2,Grande valse brillante in E-flat major (Chopin),10983
+beethoven-sonata-no-8-pathetique-3rd-movement-ro,2,Piano Sonata No. 8 (Beethoven),80876
+liszt-la-campanella,3,La campanella,57072
+debussy-cc-5,1,Children's Corner,26788
+joplin-the-strenuous-life,1,,
+grieg-in-the-hall-of-the-mountain-king-op-46-no,4,In the Hall of the Mountain King,209836
+chpn-op10-e12,3,"Étude Op. 10, No. 12 (Chopin)",21579
+joplin-pineapple-rag,1,,
+appass-3,2,Piano Sonata No. 23 (Beethoven),36273
+beethoven-sonata-op49-1-2,1,Piano Sonata No. 19 (Beethoven),9385
+chopin-etude-op10-3,3,"Étude Op. 10, No. 3 (Chopin)",24236
+debussy-deuxieme-arabesque-l66-no-2,2,Deux arabesques,21183
+schubert-hungarian-melody-d817,1,,
+beethoven-moonlight-3,3,Piano Sonata No. 14 (Beethoven),186919
+chopin-waltz-op64-2,2,"Waltz in C-sharp minor, Op. 64, No. 2 (Chopin)",14339
+liszt-hungarian-rhapsody-2,3,Hungarian Rhapsody No. 2,45450
+debussy-arabesque-1,3,Deux arabesques,21183
+joplin-wall-street-rag,1,,
+chpn-p15,2,"Prelude, Op. 28, No. 15 (Chopin)",25637
+chpn-op66,3,Fantaisie-Impromptu,37730
+chopin-nocturne-op72-1,2,"Nocturne in E minor, Op. posth. 72 (Chopin)",11413
+ravel-pavane,2,Pavane pour une infante défunte,50876
+pathetique-2,3,Piano Sonata No. 8 (Beethoven),80876
+deb-clai,4,Clair de lune (Debussy),77824
+beethoven-tempest-3,2,Piano Sonata No. 17 (Beethoven),25226
+mz-331-3,4,Piano Sonata No. 11 (Mozart),72045
+beethoven-sonata-no-8-pathetique-1st-movement-gr,2,Piano Sonata No. 8 (Beethoven),80876
+elgar-salut-damour,3,Salut d'Amour,20030
+debussy-reverie,2,Rêverie (Debussy),1490
+joplin-solace,2,Solace (Joplin),5549
+ty-juni,2,The Seasons (Tchaikovsky),29419
+mozart-fantasy-in-d-minor-kv-397,2,Fantasia No. 3 (Mozart),12380
+rachmaninoff-prelude-in-c-minor-op-3-no-2,3,Prelude in C-sharp minor (Rachmaninoff),26542
+mond-1,4,Piano Sonata No. 14 (Beethoven),186919
+chopin-premiere-ballade-op-23,3,Ballade No. 1 (Chopin),39422
+schubert-impromptu-in-ges-dur-d-899-op-90-no-3,2,Impromptus (Schubert),26091
+schubert-impromptu-in-as-dur-d-899-op-90-no-4,2,Impromptus (Schubert),26091
+joplin-bethena,2,Bethena,5547
+liszt-liebestraum-3,3,Liebesträume,47224
+liszt-consolation-3,2,Consolations (Liszt),16557
+grieg-wedding-day-at-troldhaugen-o-65,2,Wedding Day at Troldhaugen,10506
+schubert-impromptu-in-es-dur-d-899-op-90-no-2,2,Impromptus (Schubert),26091
+bach-846,3,"Prelude and Fugue in C major, BWV 846",32832
+bach-847,2,"Prelude and Fugue in C minor, BWV 847",8006
+satie-gymnopedie-1,4,Gymnopédies,163972
+satie-gymnopedie-2,2,Gymnopédies,163972
+grieg-ases-death,3,Peer Gynt (Grieg),95503
+anon-air-bwv-anh-131,0,Notebook for Anna Magdalena Bach,24402
+chopin-polonaise-op53,3,"Polonaise in A-flat major, Op. 53",20571

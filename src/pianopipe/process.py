@@ -50,7 +50,8 @@ def seconds_at(song: Song, tick: int) -> float:
     return tempo_map(song)(tick)
 
 
-def load_notes(src: str | Path, satb: bool = False, repaired: list[int] | None = None):
+def load_notes(src: str | Path, satb: bool = False, repaired: list[int] | None = None, melody=False,
+               merged: dict | None = None):
     """Read a MIDI or MusicXML file's piano part with hands: (song, notes, hand_source, seconds(tick)).
 
     MusicXML hands come from the staves (musicxml.py); MIDI hands from track names, tracks or channels (tracks.py);
@@ -58,13 +59,20 @@ def load_notes(src: str | Path, satb: bool = False, repaired: list[int] | None =
     With `satb` (a four-part hymn or chorale on two staves), or when the file's parts are a choir, the SATB rule's
     reach step moves the tenor to the right hand where the left hand would stretch past an octave.
     Hands from the file's structure are repaired where a chord is unplayable (hands.repair_hands); `repaired` gets the
-    tick of each chord that was split, which the quality gate counts as unplayable as written."""
+    tick of each chord that was split, which the quality gate counts as unplayable as written.
+    `melody` (MusicXML only): merge the score's voice or melody part into the right hand (musicxml.load); `merged` gets
+    the report (musicxml.Score.melody), the load's "melody: ..." warnings and, for a score with a voice part, its
+    `tune` for levels 1 and 2 (musicxml.Score.tune and tune_bars, as make_levels takes it)."""
     suffix = Path(src).suffix.lower()
     if suffix in musicxml.SUFFIXES:
-        score = musicxml.load(src, satb=satb)
+        score = musicxml.load(src, satb=satb, melody=melody)
         song, notes, hand_source = score.song, score.notes, score.hand_source
         if repaired is not None:
             repaired += score.repaired
+        if merged is not None:
+            merged.update(score.melody, warnings=[w for w in score.warnings if w.startswith("melody:")])
+            if score.tune:
+                merged["tune"] = (score.tune, score.tune_bars)
     elif suffix in leadsheet.SUFFIXES:
         song, _ = leadsheet.load(src)
         notes, hand_source = song.notes, "leadsheet"
@@ -105,9 +113,11 @@ def process_file(
 ) -> SongEntry:
     """Process one MIDI file into out_dir/<id>/level<N>.mid and return its catalog entry.
 
-    `meta` may hold id, title, full_title, composer, license, attribution, source_url, era, tags, character (which
-    overrides the computed one), satb (true for a four-part hymn setting: see load_notes) and fingers (the source's
-    printed fingering for a file that can't carry it, as [[tick, pitch, finger], ...]: tools/mutopia_fingering.py).
+    `meta` may hold id, title, full_title, composer, license, attribution, source_url, era, known, tags, character (which
+    overrides the computed one), satb (true for a four-part hymn setting: see load_notes), melody (true, or a part's
+    name or id, or a list of them: a MusicXML song's voice or melody part merged into the right hand, §2.6; its
+    "melody: ..." warnings head the entry's) and fingers (the source's printed fingering for a file that can't carry
+    it, as [[tick, pitch, finger], ...]: tools/mutopia_fingering.py).
     `base_url` is prepended to level file paths in the entry (relative to catalog.json).
     With a `policy`, the quality gate runs before anything is written and a failing song raises QualityError;
     without one, only its warnings are kept. With `fingering`, every level's notes get fingers (fingering.py).
@@ -124,7 +134,9 @@ def process_file(
     meta = dict(meta or {})
     song_id = meta.pop("id", None) or slugify(src.stem)
     repaired: list[int] = []
-    song, notes, hand_source, seconds = load_notes(src, satb=bool(meta.pop("satb", False)), repaired=repaired)
+    merged: dict = {}
+    song, notes, hand_source, seconds = load_notes(src, satb=bool(meta.pop("satb", False)), repaired=repaired,
+                                                   melody=meta.pop("melody", False) or False, merged=merged)
     if not notes:
         raise QualityError(["no playable notes"])
     # Printed fingers are kept by assign_fingering where they fit, as a score's are.
@@ -136,14 +148,14 @@ def process_file(
     tpb = song.ticks_per_beat
 
     duration_s = round(seconds(max(n.end for n in notes)), 2)
-    levels = make_levels(notes, song.ticks_per_beat, song.meta)
+    levels = make_levels(notes, song.ticks_per_beat, song.meta, merged.get("tune"))
     gate = check(notes, levels, hand_source, duration_s, song.ticks_per_beat, seconds, policy or GatePolicy(), repaired)
     if policy is not None and not gate.ok:
         raise QualityError(gate.reasons)
 
     difficulties = {lvl: difficulty_score(level_notes, seconds, song.ticks_per_beat) for lvl, level_notes in levels.items()}
     tags = list(meta.pop("tags", []))
-    warnings = gate.warnings
+    warnings = merged.get("warnings", []) + gate.warnings
     if len(warnings) > MAX_WARNINGS:
         warnings = warnings[: MAX_WARNINGS - 1] + [f"and {len(warnings) - MAX_WARNINGS + 1} more"]
     char = meta.pop("character", None) or features.character(levels[max(levels)], seconds, tpb)
@@ -158,7 +170,7 @@ def process_file(
         warnings=warnings,
         tags=tags,
         character=char,
-        **{k: v for k, v in meta.items() if k in ("full_title", "composer", "license", "attribution", "source_url", "era")},
+        **{k: v for k, v in meta.items() if k in ("full_title", "composer", "license", "attribution", "source_url", "era", "known")},
     )
     song_dir = Path(out_dir) / song_id
     for level, level_notes in levels.items():
@@ -174,9 +186,12 @@ def process_file(
             # A level that can't be engraved (too many pages for the book, Verovio failing) keeps its MIDI and plays
             # without sheet music; it used to drop the whole song from the catalog.
             # The full level of a MusicXML score shows the score's own notation where its bars line up (engrave.py).
-            score = src if level == max(levels) and src.suffix.lower() in musicxml.SUFFIXES and hand_source == "staves" else None
+            # Not with a merged melody: the score's keyboard part doesn't have it.
+            score = (src if level == max(levels) and src.suffix.lower() in musicxml.SUFFIXES and hand_source == "staves"
+                     and not merged.get("parts") else None)
             try:
-                sheet = engrave.engrave(path, song_dir, f"level{level}", level, entry.title, source=score)
+                sheet = engrave.engrave(path, song_dir, f"level{level}", level, entry.title, source=score,
+                                       composer=entry.composer, tempo=meta.get("tempo", ""))
                 lv.sheet = SheetRef(f"{base_url}{song_id}/level{level}.sheet.json", sheet.sha256, sheet.pages)
                 if sheet.note:
                     entry.warnings.append(f"level {level}: sheet music from the level, not the score ({sheet.note})")
