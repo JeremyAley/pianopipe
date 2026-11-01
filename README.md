@@ -16,7 +16,7 @@ The same pipeline builds the public catalog ([quest-piano-catalog](https://githu
 ## Install
 
 ```bash
-pip install "git+https://github.com/JeremyAley/pianopipe@v0.5.1"
+pip install "git+https://github.com/JeremyAley/pianopipe@v0.6.0"
 ```
 
 Python 3.10 or later; the only dependency is [mido](https://github.com/mido/mido). `pianopipe --version` prints the installed version.
@@ -28,6 +28,8 @@ pianopipe inspect song.mid                    # tracks, channels, programs, whic
 pianopipe process song.mid --out out/         # one song: out/<id>/level1..4.mid and its catalog entry
 pianopipe build songs/ out/catalog --name "My library"   # a folder of MIDI files -> catalog.json + levels
 pianopipe eval-fingering                      # fingering against textbook cases
+pianopipe sightread --grade 2 --seed 17       # a sight-reading piece at Grade 2: out/songs/sr-g2-017/level1.mid + sheet
+pianopipe sightread --bank --out out/reading  # the reading collection: 200 pieces a grade, Initial to Grade 5
 ```
 
 ## Develop

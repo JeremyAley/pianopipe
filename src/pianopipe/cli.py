@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from . import __version__, engrave, grading, midi_io, omr_repair
-from .catalog import verify
+from .catalog import Catalog, verify
 from . import fingering_eval
 from .hands import hand_accuracy, split_hands
 from .process import build_catalog, process_file
@@ -61,6 +61,35 @@ def _engrave(args) -> int:
     sheet = engrave.engrave(args.file, args.out, stem, level, fingering=False if args.no_fingering else None,
                             keep_musicxml=args.musicxml)
     print(f"wrote {sheet.json_path} ({sheet.pages} pages, {sheet.data['bars']} bars), sha256 {sheet.sha256}")
+    return 0
+
+
+def _sightread(args) -> int:
+    from . import sightread
+
+    if args.bank:
+        grades = sorted({int(g) for g in args.grades.split(",")}) if args.grades else list(sightread.GRADES)
+        cat = sightread.build_bank(args.out, args.count, grades, sheets=not args.no_sheets, jobs=args.jobs)
+        print(f"wrote {len(cat.songs)} pieces to {Path(args.out) / 'catalog.json'}")
+        print(sightread.summary(cat))
+        problems = verify(Path(args.out) / "catalog.json")
+        for p in problems:
+            print(f"  INVALID {p}")
+        return 1 if problems else 0
+    if args.grade is None:
+        print("sightread: give --grade (and --seed), or --bank", file=sys.stderr)
+        return 2
+    entry = sightread.build_piece(args.grade, args.seed, args.seed, args.out, sheets=not args.no_sheets)
+    # As the catalog writes it (no empty optional fields).
+    print(json.dumps(json.loads(Catalog("", [sightread._entry(entry)]).to_json())["songs"][0], indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cards(args) -> int:
+    from . import cards
+
+    manifest = cards.build(args.out, passages=not args.no_passages)
+    print(f"wrote {Path(args.out) / 'cards.json'}: {cards.summary(manifest)}")
     return 0
 
 
@@ -180,6 +209,25 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-fingering", action="store_true")
     p.add_argument("--musicxml", action="store_true", help="also keep the notation as <stem>.musicxml")
     p.set_defaults(func=_engrave)
+
+    p = sub.add_parser("sightread", help="generate sight-reading pieces at a grade (level file and sheet music), "
+                                         "or the reading collection (--bank)")
+    p.add_argument("--grade", type=int, help="0 (Initial) to 5")
+    p.add_argument("--seed", type=int, default=1, help="the same grade and seed always give the same piece")
+    p.add_argument("--out", default="out", help="writes <out>/songs/sr-g<grade>-<seed>/level1.mid, or with --bank "
+                   "<out>/catalog.json and <out>/songs/")
+    p.add_argument("--bank", action="store_true", help="the reading collection: --count pieces per grade")
+    p.add_argument("--count", type=int, default=200, help="pieces per grade in the bank (default 200)")
+    p.add_argument("--grades", help="with --bank, comma-separated grades (default all: 0,1,2,3,4,5)")
+    p.add_argument("--jobs", type=int, help="with --bank, worker processes (default: CPUs - 1)")
+    p.add_argument("--no-sheets", action="store_true", help="level files only (no sheet music)")
+    p.set_defaults(func=_sightread)
+
+    p = sub.add_parser("cards", help="the reading cards and read-ahead passages, in the app's layout "
+                                     "(unity/QuestPianoTrainer/Assets/Resources/Reading)")
+    p.add_argument("--out", required=True, help="writes <out>/cards.json, <out>/cards/, <out>/passages.json, <out>/passages/")
+    p.add_argument("--no-passages", action="store_true", help="the cards only")
+    p.set_defaults(func=_cards)
 
     p = sub.add_parser("build", help="build a catalog.json from a folder of MIDI files")
     p.add_argument("src")

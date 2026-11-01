@@ -17,6 +17,9 @@ docs/catalog-expansion.md §2; in short:
 - Tempo from <sound tempo>, else <metronome>, else tempo words (Italian, or English above the staff: "Moderately
   fast", "Bright Rock"; "Tempo I" goes back to the first); time and key signatures become meta events.
 - Printed fingering (<fingering>) is kept in Note.finger.
+- Expression (docs/formats.md, "Dynamics and articulation"): velocities from <sound dynamics>, hairpins (<wedge>)
+  ramped to the next marking (or 12 louder or softer without one); a staccato sounds for half its value
+  (staccatissimo a quarter); the keyboard part's <pedal> marks are the sustain pedal (Song.pedal).
 - With `load(melody=...)`, a song's voice or melody part is merged into the right hand as its top voice (melody.py),
   in the bars whose note values add up; the others keep the piano's own top line. Merged or not, a voice or
   melody-instrument part's line is Score.tune, which levels 1 and 2 take as their tune (difficulty.make_levels).
@@ -39,6 +42,7 @@ import mido
 
 from .hands import repair_hands
 from .melody import merge as merge_melody, top_line
+from .midi_io import merge_pedal
 from .model import Note, Song, TrackInfo
 from .satb import reach
 
@@ -48,6 +52,9 @@ MIN_BPM, MAX_BPM = 20, 300
 GRACE_LENGTH = Fraction(1, 8)  # an acciaccatura lasts a 32nd note (in quarter notes)
 TIE_GAP = Fraction(4)  # the longest gap (quarter notes) a tie may bridge
 DEFAULT_VELOCITY = 80
+WEDGE_STEP = 12  # a hairpin with no marking after it ends this much louder (or softer) than it began
+# How long an articulated note sounds, as a share of its value (a tie isn't shortened).
+SOUNDING = {"staccato": Fraction(1, 2), "spiccato": Fraction(1, 2), "staccatissimo": Fraction(1, 4)}
 
 STEPS = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 MAJOR_KEYS = ["Cb", "Gb", "Db", "Ab", "Eb", "Bb", "F", "C", "G", "D", "A", "E", "B", "F#", "C#"]
@@ -114,6 +121,8 @@ class _Note:
     grace: str = ""  # "", "acciaccatura" or "appoggiatura"
     finger: int | None = None
     chord: bool = False
+    sounding: Fraction = Fraction(1)  # share of its value it sounds for (SOUNDING: a staccato is half)
+    own_dynamics: bool = False  # a <note dynamics> of its own: hairpins leave it as it is
 
 
 @dataclass
@@ -141,6 +150,9 @@ class _Measure:
     jump_sound: bool = False  # a D.C. or D.S. from a <sound> attribute
     system: bool = False  # starts a system (new system or page)
     margin: float | None = None  # its system's left margin (tenths)
+    dynamics: list[tuple[Fraction, int]] = field(default_factory=list)  # (pos, velocity) of each dynamic marking
+    wedges: list[tuple[Fraction, str, str]] = field(default_factory=list)  # (pos, type, number) of each <wedge>
+    pedal: list[tuple[Fraction, str]] = field(default_factory=list)  # (pos, type) of each <pedal> mark
 
 
 @dataclass
@@ -304,8 +316,17 @@ def _parse_part(part_el: ET.Element, info: dict) -> _Part:
             elif tag == "direction":
                 at = pos + Fraction(int(_num(el.findtext("offset"))), divisions)
                 velocity = _direction(el, m, at, velocity)
+                snd = el.find("sound")
+                if snd is not None and snd.get("dynamics"):
+                    m.dynamics.append((at, velocity))
+                for w in el.iter("wedge"):
+                    m.wedges.append((at, w.get("type", ""), w.get("number", "1")))
+                for pd in el.iter("pedal"):
+                    m.pedal.append((at, pd.get("type", "")))
             elif tag == "sound":
                 velocity = _sound(el, m, pos, velocity)
+                if el.get("dynamics"):
+                    m.dynamics.append((pos, velocity))
             elif tag == "barline":
                 _barline(el, m)
             elif tag == "print":
@@ -347,13 +368,63 @@ def _parse_part(part_el: ET.Element, info: dict) -> _Part:
                     if digits and f.get("substitution") != "yes":
                         finger = int(digits[0])
                         break
+                sounding = min((SOUNDING[a.tag] for a in el.iterfind("notations/articulations/*") if a.tag in SOUNDING),
+                               default=Fraction(1))
                 m.notes.append(_Note(
                     start, dur, pitch, int(_num(el.findtext("staff"), 1)), (el.findtext("voice") or "1").strip(),
-                    max(1, min(127, vel)), "start" in ties, "stop" in ties, grace, finger, is_chord,
+                    max(1, min(127, vel)), "start" in ties, "stop" in ties, grace, finger, is_chord, sounding,
+                    bool(el.get("dynamics")),
                 ))
         m.length = max(furthest, pos)
         part.measures.append(m)
+    _hairpins(part)
     return part
+
+
+def _hairpins(part: _Part) -> None:
+    """Hairpins as velocity ramps, in document order: a crescendo or diminuendo takes its notes from the dynamic in
+    force where it starts to the next marking at or after its end (within the measure after it; the notes between its
+    end and that marking at the marking's level), or without one to WEDGE_STEP louder or softer, which then holds until
+    the next marking. A note's own <note dynamics> is left alone."""
+    at, t = [], Fraction(0)
+    for m in part.measures:
+        at.append(t)
+        t += m.length
+    marks = sorted((at[i] + pos, v) for i, m in enumerate(part.measures) for pos, v in m.dynamics)
+    opened: dict[str, tuple[Fraction, str]] = {}
+    wedges = set()
+    for i, m in enumerate(part.measures):
+        for pos, kind, number in sorted(m.wedges, key=lambda w: (w[0], w[1] != "stop")):
+            if kind == "stop":
+                if number in opened:
+                    start, k = opened.pop(number)
+                    wedges.add((start, at[i] + pos, k, i))
+            elif kind in ("crescendo", "diminuendo"):
+                opened[number] = (at[i] + pos, kind)
+    held: list[tuple[Fraction, Fraction, int]] = []  # (from, until, change): an unmarked hairpin's level, held
+    for start, stop, kind, mi in sorted(wedges):
+        if stop <= start:
+            continue
+        # The level in force where it starts: the last marking, and any earlier unmarked hairpin's change still held.
+        v0 = next((v for a, v in reversed(marks) if a <= start), DEFAULT_VELOCITY)
+        v0 += sum(c for a, b, c in held if a <= start < b)
+        reach = at[mi + 1] + part.measures[mi + 1].length if mi + 1 < len(part.measures) else t
+        target = next(((a, v) for a, v in marks if stop <= a < reach and a > start), None)
+        if target is not None:
+            vt, hold = target[1], target[0]
+        else:
+            vt = max(1, min(127, v0 + (WEDGE_STEP if kind == "crescendo" else -WEDGE_STEP)))
+            hold = next((a for a, _ in marks if a > stop), t + 1)
+            held.append((stop, hold, vt - v0))
+        for i, m in enumerate(part.measures):
+            if at[i] + m.length < start or at[i] >= hold:
+                continue
+            for n in m.notes:
+                x = at[i] + n.pos
+                if n.own_dynamics or not start <= x < hold:
+                    continue
+                d = (vt - v0) * (float((x - start) / (stop - start)) if x < stop else 1.0)
+                n.velocity = max(1, min(127, round(n.velocity + d)))
 
 
 def _sound(el: ET.Element, m: _Measure, at: Fraction, velocity: int) -> int:
@@ -614,7 +685,7 @@ def _events(parts: list[_Part], order: list[int], starts: list[Fraction]) -> lis
                 if n.grace:
                     pending.setdefault(n.voice, []).append(n)
                     continue
-                start, end = t0 + n.pos, t0 + n.pos + n.dur
+                start, end = t0 + n.pos, t0 + n.pos + (n.dur if n.tie_start or n.tie_stop else n.dur * n.sounding)
                 graces = pending.pop(n.voice, [])
                 if graces:
                     start = _place_graces(graces, n, start, end, pi, out)
@@ -636,6 +707,27 @@ def _events(parts: list[_Part], order: list[int], starts: list[Fraction]) -> lis
                 if n.tie_start:
                     open_ties[key] = ev
     return out
+
+
+def _pedal(parts: list[_Part], order: list[int], starts: list[Fraction], total: Fraction) -> list[tuple[Fraction, Fraction]]:
+    """The keyboard parts' <pedal> marks on the unrolled timeline as (down, up) spans: start (or resume) puts it down,
+    stop (or discontinue) lifts it, change lifts it and puts it down again at once (two spans that touch)."""
+    marks = sorted((t0 + pos, 0 if kind in ("stop", "discontinue") else 1 if kind == "change" else 2, kind)
+                   for p in parts for mi, t0 in zip(order, starts) if mi < len(p.measures) for pos, kind in p.measures[mi].pedal)
+    spans, down = [], None
+    for t, _, kind in marks:
+        if kind in ("start", "resume") and down is None:
+            down = t
+        elif kind in ("stop", "discontinue") and down is not None:
+            spans.append((down, t))
+            down = None
+        elif kind == "change":
+            if down is not None:
+                spans.append((down, t))
+            down = t
+    if down is not None:
+        spans.append((down, total))
+    return spans
 
 
 def _place_graces(graces: list[_Note], main: _Note, start: Fraction, end: Fraction, part: int, out: list[_Event]) -> Fraction:
@@ -724,6 +816,7 @@ def load(path: str | Path, satb: bool = False, melody=False) -> Score:
     for e in events:
         if 0 < e.end - total <= MEASURE_SLACK:  # the last measure snapped to its time signature: so does its last note
             e.end = total
+    pedal = _pedal([p for p in keyboard if not p.choir_voice] or parts, order, starts, total)
     kp_id = ""
     staff_hand = lambda e: None  # noqa: E731 - only a two-staff keyboard part has cross-staff notes
     tpb = TPB
@@ -813,7 +906,8 @@ def load(path: str | Path, satb: bool = False, melody=False) -> Score:
         melody_report.update(dropped=stats.dropped, moved=stats.moved, cut=stats.cut)
         warnings.append(f"melody: left out {stats.dropped} accompaniment notes above it or doubling it, moved "
                         f"{stats.moved} more than a tenth under it to the left hand, shortened {stats.cut}")
-    song = Song(ticks_per_beat=tpb, meta=_meta(parts, merged, order, starts, tpb, warnings, total))
+    song = Song(ticks_per_beat=tpb, meta=_meta(parts, merged, order, starts, tpb, warnings, total),
+                pedal=merge_pedal((round(a * tpb), round(b * tpb)) for a, b in pedal))
     song.tracks = [
         TrackInfo(0, "RH", sorted((x for x in notes if x.hand == "R"), key=lambda x: (x.start, x.pitch))),
         TrackInfo(1, "LH", sorted((x for x in notes if x.hand == "L"), key=lambda x: (x.start, x.pitch))),

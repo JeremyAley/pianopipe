@@ -20,6 +20,7 @@ from .satb import reach
 from .tracks import pick_piano
 
 MAX_WARNINGS = 20
+PEDAL_FROM_LEVEL = 3  # Simplified and Full carry the score's pedal; the melody levels don't (docs/formats.md)
 
 
 def slugify(text: str) -> str:
@@ -177,7 +178,11 @@ def process_file(
         if fingering:
             level_notes = assign_fingering(level_notes, song.ticks_per_beat)
         path = song_dir / f"level{level}.mid"
-        midi_io.write_app_midi(path, song.ticks_per_beat, song.meta, level_notes)
+        # The score's pedal over the level's own notes (levels keep the source's ticks), from Simplified up: the melody
+        # levels are a line, not the score's texture, and leave the pedal unknown (docs/formats.md).
+        pedal = (midi_io.clip_pedal(song.pedal, min(n.start for n in level_notes), max(n.end for n in level_notes))
+                 if level_notes and level >= PEDAL_FROM_LEVEL else [])
+        midi_io.write_app_midi(path, song.ticks_per_beat, song.meta, level_notes, pedal)
         lv = Level(
             level, LEVELS[level], f"{base_url}{song_id}/level{level}.mid", sha256_file(path), len(level_notes),
             difficulties[level], fingering, tempo_bpm=tempo, skills=features.skills(level_notes, seconds, tpb, song.meta),

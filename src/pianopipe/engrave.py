@@ -35,6 +35,19 @@ SVG = "{http://www.w3.org/2000/svg}"
 XLINK_HREF = "{http://www.w3.org/1999/xlink}href"
 
 
+@dataclass(frozen=True)
+class Layout:
+    """A page's size in pixels and Verovio's zoom on it: the book's pages, or another shape (reading cards)."""
+    width: int = PAGE_W
+    height: int = PAGE_H
+    scale: int = SCALE
+    margin: int = MARGIN  # Verovio units, left, right and bottom
+    margin_top: int = 110  # MARGIN_TOP
+
+
+BOOK = Layout()
+
+
 def fingering_for(level: int) -> bool:
     """Finger numbers in the notation for levels 1-3 (learning to read); level 4 is the plain score."""
     return level <= 3
@@ -64,14 +77,15 @@ class SourceMismatch(ValueError):
     """The source score's notation can't stand for the level: its bars or measures don't line up with the app's."""
 
 
-def _toolkit():
+def _toolkit(layout: Layout = BOOK):
     import verovio
 
     tk = verovio.toolkit()
     tk.setOptions({
-        "pageWidth": round(PAGE_W * 100 / SCALE), "pageHeight": round(PAGE_H * 100 / SCALE), "scale": SCALE,
-        "adjustPageHeight": False, "svgHtml5": True, "breaks": "auto", "header": "none", "footer": "none",
-        "pageMarginTop": MARGIN_TOP, "pageMarginBottom": MARGIN, "pageMarginLeft": MARGIN, "pageMarginRight": MARGIN,
+        "pageWidth": round(layout.width * 100 / layout.scale), "pageHeight": round(layout.height * 100 / layout.scale),
+        "scale": layout.scale, "adjustPageHeight": False, "svgHtml5": True, "breaks": "auto", "header": "none", "footer": "none",
+        "pageMarginTop": layout.margin_top, "pageMarginBottom": layout.margin, "pageMarginLeft": layout.margin,
+        "pageMarginRight": layout.margin,
         # Gaps beyond what the notes need (ledger lines, finger numbers): small, so more systems fit a page; what's left
         # over is shared out between them (justifyVertically).
         "spacingSystem": 2, "spacingStaff": 6, "justifyVertically": True, "xmlIdSeed": 1, "mnumInterval": 0,
@@ -283,22 +297,23 @@ def _furniture(svg: str, page: int, header: Header | None, lines: bool = True) -
     return svg[:at] + "".join(parts) + svg[at:]
 
 
-def _render(svg: str):
+def _render(svg: str, layout: Layout = BOOK):
     import resvg_py
     from PIL import Image
 
     fonts = [str(p) for p in sorted(FONTS.glob("*.ttf"))]
-    raw = bytes(resvg_py.svg_to_bytes(svg_string=svg, background="#ffffff", width=PAGE_W, height=PAGE_H, skip_system_fonts=True,
+    raw = bytes(resvg_py.svg_to_bytes(svg_string=svg, background="#ffffff", width=layout.width, height=layout.height, skip_system_fonts=True,
                                       font_files=fonts, font_family=SERIF, serif_family=SERIF))
     img = Image.open(io.BytesIO(raw)).convert("L")
-    return img if img.size == (PAGE_W, PAGE_H) else img.resize((PAGE_W, PAGE_H))
+    size = (layout.width, layout.height)
+    return img if img.size == size else img.resize(size)
 
 
-def _png(svg: str, page: int = 1, header: Header | None = None) -> bytes:
+def _png(svg: str, page: int = 1, header: Header | None = None, layout: Layout = BOOK) -> bytes:
     from PIL import Image, ImageChops
 
-    full = _render(_furniture(svg, page, header, lines=True))
-    symbols = _render(_furniture(svg, page, header, lines=False))
+    full = _render(_furniture(svg, page, header, lines=True), layout)
+    symbols = _render(_furniture(svg, page, header, lines=False), layout)
     out = Image.new("L", full.size, PAPER)
     # Lines: dark in the full page, not in the symbols' (a third of the way to ink or more).
     out.paste(STAFF, mask=ImageChops.subtract(symbols, full).point(lambda v: 255 if v >= 90 else 0))
@@ -365,6 +380,16 @@ def engrave(level_midi: str | Path, out_dir: str | Path, stem: str, level: int, 
     return sheet
 
 
+def engrave_notation(xml: str, out_dir: str | Path, stem: str, level: int, app_starts: list[Q],
+                     header: Header | None = None, keep_musicxml: bool = False, layout: Layout = BOOK) -> Sheet:
+    """Engraves notation already written as MusicXML (a measure per bar of the level, as notation.to_musicxml writes
+    it), for callers that adjust it first (sightread.engrave_level, cards). `app_starts`: where each bar starts and the
+    last ends, in quarters. `layout`: the page's size and zoom (the book's by default)."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return _engrave(xml, out_dir, stem, level, keep_musicxml, app_starts, header=header, layout=layout)
+
+
 # Tempo markings a score prints at its start (tools/source_tempo.py reads sources with it too): Italian, French and
 # German tempo words, capitalised as opening markings are ("dolce", "con pedale" are not tempo markings).
 TEMPO_WORDS = (r"Grave|Largo|Larghetto|Lento|Adagio|Adagietto|Andante|Andantino|Moderato|Allegretto|Allegro|Vivace|"
@@ -399,12 +424,13 @@ def page_header(song, level: int, title: str, composer: str = "", tempo: str = "
 
 
 def _engrave(xml: str, out_dir: Path, stem: str, level: int, keep_musicxml: bool, app_starts: list[Q],
-             src: musicxml.Score | None = None, expected: Counter | None = None, header: Header | None = None) -> Sheet:
+             src: musicxml.Score | None = None, expected: Counter | None = None, header: Header | None = None,
+             layout: Layout = BOOK) -> Sheet:
     """Lays out and draws `xml` and writes the pages and bar map. `app_starts`: where each of the level's bars starts
     and the last ends (quarters). Without `src` the notation is the level's own, a measure per bar; with it, the
     source's, a measure per written measure, played at the bars src.order says, which must head the `expected`
     pitches (the level's notes)."""
-    tk = _toolkit()
+    tk = _toolkit(layout)
     if header is not None:
         xml = _with_credits(xml)
         tk.setOptions({"header": "auto"})
@@ -478,7 +504,7 @@ def _engrave(xml: str, out_dir: Path, stem: str, level: int, keep_musicxml: bool
             raise SourceMismatch(f"{missing} of the level's {sum(expected.values())} notes have no notehead in the score")
     data = {
         "version": SHEET_VERSION if plays is None else SHEET_VERSION_REPEATS, "level": level, "bars": bars,
-        "width": PAGE_W, "height": PAGE_H, "pages": [], "systems": systems, "measures": measures,
+        "width": layout.width, "height": layout.height, "pages": [], "systems": systems, "measures": measures,
     }
     # Written only now, so a source that doesn't fit leaves nothing behind.
     if keep_musicxml:
@@ -486,7 +512,7 @@ def _engrave(xml: str, out_dir: Path, stem: str, level: int, keep_musicxml: bool
     for old in out_dir.glob(f"{stem}-p*.png"):
         old.unlink()
     for page, svg in enumerate(svgs, 1):
-        png = _png(svg, page, header)
+        png = _png(svg, page, header, layout)
         name = f"{stem}-p{page}.png"
         (out_dir / name).write_bytes(png)
         data["pages"].append({"file": name, "sha256": hashlib.sha256(png).hexdigest()})

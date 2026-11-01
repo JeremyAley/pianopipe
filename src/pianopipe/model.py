@@ -42,6 +42,9 @@ class Song:
     # Tempo, time and key signature events as (absolute tick, mido.MetaMessage).
     meta: list = field(default_factory=list)
     tracks: list[TrackInfo] = field(default_factory=list)
+    # The sustain pedal: (down tick, up tick) spans in order, from the source's CC 64 or a score's pedal marks; empty
+    # when it has none (docs/formats.md). Spans may touch (a change: up and down again at one tick), never overlap.
+    pedal: list[tuple[int, int]] = field(default_factory=list)
 
     @property
     def notes(self) -> list[Note]:

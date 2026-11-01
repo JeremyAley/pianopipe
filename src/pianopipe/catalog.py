@@ -18,6 +18,7 @@ from pathlib import Path
 
 CATALOG_VERSION = 1
 GRADE_SOURCES = ("reference", "estimated")
+COLLECTIONS = ("reading",)  # a catalog.json's optional `collection`: the reading collection (sightread.py)
 CHARACTERS = ("agile", "lyrical", "other")
 # The song's first tag, from its full level's grade: the exam boards' own three tiers (ABRSM and Trinity put grades 1-3
 # at RQF level 1, 4-5 at level 2 and 6-8 at level 3; docs/learning-mode.md 1.1). A grade below the limit gets the tag.
@@ -97,9 +98,12 @@ class Catalog:
     name: str
     songs: list[SongEntry] = field(default_factory=list)
     version: int = CATALOG_VERSION
+    collection: str = ""  # optional: "reading" for the reading collection (docs/formats.md); empty for a song catalog
 
     def to_json(self) -> str:
         data = asdict(self)
+        if not data["collection"]:
+            del data["collection"]
         for song in data["songs"]:
             for key in ("full_title", "character"):
                 if not song[key]:
@@ -120,8 +124,13 @@ class Catalog:
 
     @classmethod
     def load(cls, path: str | Path) -> "Catalog":
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Catalog":
+        """A parsed catalog.json, validated."""
         validate(data)
+
         def level(lv: dict) -> Level:
             known = _known(Level, lv)
             if known.get("sheet") is not None:
@@ -129,7 +138,7 @@ class Catalog:
             return Level(**known)
 
         songs = [SongEntry(**{**_known(SongEntry, s), "levels": [level(lv) for lv in s["levels"]]}) for s in data["songs"]]
-        return cls(name=data["name"], songs=songs, version=data["version"])
+        return cls(name=data["name"], songs=songs, version=data["version"], collection=data.get("collection", ""))
 
 
 def sha256_file(path: str | Path) -> str:
@@ -147,6 +156,8 @@ def validate(data: dict) -> None:
         raise ValueError("catalog needs a name")
     if not isinstance(data.get("songs", []), list):
         raise ValueError("songs must be a list")
+    if data.get("collection", COLLECTIONS[0]) not in COLLECTIONS:
+        raise ValueError(f"collection {data['collection']!r} is not one of {', '.join(COLLECTIONS)}")
     ids = set()
     for s in data.get("songs", []):
         for key in ("id", "title", "levels"):
