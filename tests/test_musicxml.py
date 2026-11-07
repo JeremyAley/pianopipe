@@ -174,6 +174,18 @@ def test_repeat_and_voltas_unroll(tmp_path):
     assert _measures_played(sc) == [1, 2, 3, 2, 4, 5]
 
 
+def test_a_first_ending_closed_early_runs_to_its_repeat_sign(tmp_path):
+    # copista closes the "1." bracket at its first bar (3); the repeat sign is at the end of 4, ending 2 is bar 5
+    ending1 = '<barline location="left"><ending number="1" type="start"/></barline>'
+    ending1_end = '<barline location="right"><ending number="1" type="stop"/></barline>'
+    ending2 = '<barline location="left"><ending number="2" type="start"/></barline>'
+    bars = _bars(6, {2: FWD, 3: ending1, -3: ending1_end, -4: BWD, 5: ending2})
+    assert _measures_played(musicxml.load(write(tmp_path, score([("Piano", bars)])))) == [1, 2, 3, 4, 2, 5, 6]
+    # with no ending after the repeat sign, a bracket closed early is left as read
+    bars = _bars(5, {2: FWD, 3: ending1, -3: ending1_end, -4: BWD})
+    assert _measures_played(musicxml.load(write(tmp_path, score([("Piano", bars)])))) == [1, 2, 3, 4, 2, 4, 5]
+
+
 def test_repeat_times(tmp_path):
     bars = _bars(2, {-1: '<barline location="right"><repeat direction="backward" times="3"/></barline>'})
     assert _measures_played(musicxml.load(write(tmp_path, score([("Piano", bars)])))) == [1, 1, 1, 2]
@@ -193,6 +205,9 @@ def test_dal_segno_al_coda(tmp_path):
     coda = '<direction><direction-type><coda/></direction-type><sound coda="c"/></direction>'
     bars = _bars(6, {2: segno, -3: tocoda, -4: ds, 5: coda})
     assert _measures_played(musicxml.load(write(tmp_path, score([("Piano", bars)])))) == [1, 2, 3, 4, 2, 3, 5, 6]
+    # a repeat inside the coda is played as printed (Lava: the coda carries on with repeats and voltas)
+    bars = _bars(7, {2: segno, -3: tocoda, -4: ds, 5: coda + FWD, -6: BWD})
+    assert _measures_played(musicxml.load(write(tmp_path, score([("Piano", bars)])))) == [1, 2, 3, 4, 2, 3, 5, 6, 5, 6, 7]
 
 
 def words(text: str, placement: str = "above") -> str:
@@ -311,6 +326,12 @@ def test_english_tempo_words(tmp_path):
     assert musicxml._tempo_word("Not too fast") == 116
     assert musicxml._tempo_word("A bit brighter") is None  # relative: the tempo stays
     assert musicxml._tempo_word("NC. SIOWIY") == 66  # OCR's I for l
+    assert musicxml._tempo_word("Easy Shufﬂe “J") == 112  # OCR's fl ligature
+    assert musicxml._tempo_word("Half-time feel, mysterious") == 120
+    assert musicxml._tempo_word("Lyrically") == 80
+    assert musicxml._tempo_word("Joyfully") == 144
+    assert (musicxml._tempo_word("Hymn-like"), musicxml._tempo_word("Easily, with freedom")) == (76, 88)
+    assert musicxml._tempo_word("Moderate swing (♪♪ = ♪♪)") == 112
     assert musicxml._tempo_word("Adagio - Allegro") == 60  # the first word wins
     assert musicxml._tempo_word("fast", english=False) is None
     met = ('<direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>92</per-minute>'

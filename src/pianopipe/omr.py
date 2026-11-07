@@ -166,6 +166,8 @@ class Measure:
     absent: bool = False  # the part has no staves in this system (Audiveris split one system in two)
     alone: bool = False  # the part is the only one in its system although the score has others
     unread: list[tuple[int, float]] = field(default_factory=list)  # (staff, x) of head-like marks no symbol explains
+    top: float = 0.0  # the piano's top and bottom staff lines on the page (for crops of the bar)
+    bottom: float = 0.0
 
 
 @dataclass
@@ -241,7 +243,10 @@ class Sheet:
         inter = self.inters.get(cid)
         if inter is None:
             return None
-        c = Chord(cid, staff_index.get(inter.staff, 1), inter.box)
+        staff = inter.staff
+        if staff is None:  # Audiveris leaves some chords without a staff; their heads have one
+            staff = next((m.staff for m in self.linked(cid, "containment") if m.staff is not None), None)
+        c = Chord(cid, staff_index.get(staff, 1), inter.box)
         if inter.kind == "rest-chord":
             rests = self.linked(cid, "containment", "rest")
             if not rests:
@@ -472,7 +477,9 @@ def read(path: str | Path, part_id: int | None = None) -> Score:
                                 float(stack.get("left", 0)) if stack is not None else 0,
                                 float(stack.get("right", 0)) if stack is not None else 0,
                                 abnormal=m_el.get("abnormal") == "true", interline=sheet.interline,
-                                alone=len(parts) == 1)
+                                alone=len(parts) == 1,
+                                top=min((e[0] for e in extents.values()), default=0.0),
+                                bottom=max((e[1] for e in extents.values()), default=0.0))
                     measures.append(m)
                 voice_of: dict[int, int] = {}
                 for v in m_el.findall("voice"):

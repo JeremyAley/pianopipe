@@ -66,6 +66,25 @@ def test_reader_pitches_from_clef_key_and_accidentals(tmp_path):
     assert [h.midi for c in sorted(m.chords, key=lambda c: (c.staff, c.x)) for h in c.heads] == [78, 72, 72, 46, 46]
 
 
+def test_reader_takes_a_chord_without_a_staff_from_its_heads(tmp_path):
+    """Audiveris 5.11 leaves some head chords with no staff attribute (seen on a Verovio page's left hand); read on
+    the top staff, the left hand came out in treble pitches and omr-repair 'fixed' right bars into wrong ones."""
+    import re
+    import zipfile
+
+    bar = [N(1, 20, (treble("C5"),), shape="WHOLE_NOTE", stem=None), N(2, 20, (bass("C3"),), shape="WHOLE_NOTE", stem=None)]
+    _, project = write_project(tmp_path, [System([bar])], [""])
+    with zipfile.ZipFile(project) as z:
+        files = {n: z.read(n) for n in z.namelist()}
+    xml = files["sheet#1/sheet#1.xml"].decode()
+    files["sheet#1/sheet#1.xml"] = re.sub(r'(<head-chord [^>]*?) staff="\d+"', r"\1", xml).encode()
+    with zipfile.ZipFile(project, "w") as z:
+        for n, data in files.items():
+            z.writestr(n, data)
+    m = omr.read(project).measures[0]
+    assert sorted((c.staff, c.heads[0].midi) for c in m.chords) == [(1, 72), (2, 48)]
+
+
 def test_reader_lines_up_with_the_export_when_audiveris_split_a_system(tmp_path):
     systems = [System([[]], piano=False, vocal=True), System([[N(1, 20, (treble("C5"),), shape="WHOLE_NOTE", stem=None)]])]
     _, project = write_project(tmp_path, systems, ["", ""])

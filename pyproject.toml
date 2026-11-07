@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pianopipe"
-version = "0.6.0"
+version = "0.6.1"
 description = "Piano MIDI in; difficulty levels, fingering, grades and catalog.json out (for Quest Piano Trainer)"
 readme = "README.md"
 license = "Apache-2.0"
@@ -20,6 +20,8 @@ sheet = ["verovio>=4.3", "resvg_py>=0.2", "pillow>=10"]
 # Checking OMR output against a publisher's vector PDF (pdf_score.py, pdf_check.py; `pianopipe pdf-check`), and
 # reading bought PDFs and photos for import (pdf_songs.py; tools/sheet_to_library.py).
 omr = ["pymupdf>=1.24", "pillow>=10"]
+# The OMR benchmark (omr_pages.py; tools/omr_bench.py): pages engraved by Verovio and damaged with numpy; OMR-NED by musicdiff.
+bench = ["verovio>=4.3", "resvg_py>=0.2", "pillow>=10", "numpy>=1.24", "pymupdf>=1.24", "musicdiff>=6"]
 
 [project.urls]
 Source = "https://github.com/JeremyAley/pianopipe"

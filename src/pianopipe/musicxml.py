@@ -31,6 +31,7 @@ import io
 import math
 from bisect import bisect_right
 import re
+import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -70,12 +71,14 @@ TEMPO_WORDS = [
 ENGLISH_TEMPO_WORDS = [
     ("very slowly", 50), ("very slow", 50), ("slowly", 66), ("slow", 66), ("broadly", 60), ("freely", 72),
     ("tenderly", 72), ("deliberately", 72), ("majestically", 72), ("expressively", 76), ("with expression", 76),
-    ("gently", 76), ("ballad", 72), ("slow ballad", 63), ("rock ballad", 76), ("pop ballad", 76), ("slow rock", 76),
+    ("gently", 76), ("hymn-like", 76), ("hymnlike", 76), ("easily", 88), ("ballad", 72), ("slow ballad", 63), ("rock ballad", 76), ("pop ballad", 76), ("slow rock", 76),
+    ("lyrically", 80), ("sweetly", 92), ("with innocence", 96), ("half-time feel", 120), ("half time feel", 120),
     ("moderately slow", 80), ("moderately slowly", 80), ("not too slow", 80), ("leisurely", 84), ("relaxed", 88),
     ("smoothly", 88), ("flowing", 92), ("gospel", 80), ("moderately", 100), ("moderate", 100), ("steadily", 100),
     ("medium", 108), ("easy swing", 108), ("moderate rock", 112), ("shuffle", 112), ("march", 116),
-    ("not too fast", 116), ("not fast", 116), ("swing", 126), ("medium swing", 120), ("rock", 120),
-    ("moderately fast", 126), ("moderately bright", 132), ("spirited", 132), ("briskly", 132), ("lively", 144),
+    ("not too fast", 116), ("not fast", 116), ("swing", 126), ("medium swing", 120), ("moderate swing", 112),
+    ("rock", 120), ("moderately fast", 126), ("moderately bright", 132), ("spirited", 132), ("briskly", 132),
+    ("joyfully", 144), ("lively", 144),
     ("waltz", 144), ("slow waltz", 108), ("bright", 152), ("brightly", 152), ("bright rock", 152),
     ("bright swing", 160), ("fast", 160), ("quickly", 160), ("fast swing", 176), ("very fast", 184),
 ]
@@ -245,8 +248,8 @@ def _key_name(fifths: int, mode: str) -> str:
 def _tempo_word(text: str, english: bool = True) -> float | None:
     """The tempo of a marking's words: its earliest tempo word, the longest of those starting there ("Moderately fast"
     before "Moderately"). `english`: English words count too (not below the staff, where lyrics are), also as OCR
-    misreads them with I for l ("SIOWIY")."""
-    low = text.lower()
+    misreads them with I for l ("SIOWIY") or with a ligature ("Shufﬂe")."""
+    low = unicodedata.normalize("NFKC", text).lower()
     tries = [(low, TEMPO_WORDS + (ENGLISH_TEMPO_WORDS if english else []))]
     if english:
         tries.append((re.sub(r"[i1|]", "l", low), ENGLISH_TEMPO_WORDS))
@@ -497,10 +500,23 @@ def play_order(measures: list[_Measure], warnings: list[str] | None = None) -> l
     """Measure indices in playing order: repeats and voltas unrolled, then D.C./D.S. with To Coda and Fine.
 
     Repeats aren't taken again after a D.C. or D.S. (the usual convention); in a volta group the last ending is
-    played instead. A D.S. with no segno, or a To Coda with no coda sign (OCR'd exports have the words but not the
+    played instead. Past the jump to the coda they are taken again: the coda is music not yet played. A D.S. with no segno, or a To Coda with no coda sign (OCR'd exports have the words but not the
     signs), is guessed and said in `warnings` (_guess_segno, _guess_coda)."""
     warnings = [] if warnings is None else warnings
     n = len(measures)
+    # An ending read as closing early (copista closes every bracket at its first bar): one that stops before the
+    # repeat sign ending it, with the next ending starting right after that sign, runs to the sign.
+    stop = [m.ending_stop for m in measures]
+    for i, m in enumerate(measures):
+        if not stop[i] or m.backward:
+            continue
+        j = i + 1
+        while j < n and not (measures[j].backward or measures[j].forward or measures[j].ending_start is not None
+                             or stop[j]):
+            j += 1
+        if (j + 1 < n and measures[j].backward and not measures[j].forward and measures[j].ending_start is None
+                and measures[j + 1].ending_start is not None):
+            stop[i], stop[j] = False, True
     # Which ending numbers each measure belongs to, and the last number of its volta group.
     ending_of: list[set[int] | None] = [None] * n
     group_last: list[int] = [0] * n
@@ -523,7 +539,7 @@ def play_order(measures: list[_Measure], warnings: list[str] | None = None) -> l
         if current is not None:
             ending_of[i] = current
             group.append(i)
-        if m.ending_stop:
+        if stop[i]:
             current = None
     for j in group:
         group_last[j] = group_max
@@ -547,7 +563,7 @@ def play_order(measures: list[_Measure], warnings: list[str] | None = None) -> l
     if jump is not None and measures[jump].al_fine and not any(m.fine for m in measures):
         warnings.append(f"al Fine in measure {jump + 1} but no Fine: played to the end (check the score)")
     order: list[int] = []
-    i, section_start, passes, jumped = 0, 0, 1, False
+    i, section_start, passes, jumped, gone_back = 0, 0, 1, False, False
     taken: dict[int, int] = {}
     limit = 20 * n + 20
     while i < n and len(order) < limit:
@@ -562,7 +578,8 @@ def play_order(measures: list[_Measure], warnings: list[str] | None = None) -> l
         if jumped and m.fine:
             break
         if jumped and m.tocoda and coda is not None and coda > i:
-            i = coda
+            # the coda is new music: its own repeats and voltas are played as printed (Lava)
+            i, jumped, section_start, passes, taken = coda, False, coda, 1, {}
             continue
         if m.backward and not jumped:
             done = taken.get(i, 1)
@@ -573,8 +590,8 @@ def play_order(measures: list[_Measure], warnings: list[str] | None = None) -> l
                 continue
             taken[i] = 1
             section_start, passes = i + 1, 1
-        if (m.dacapo or m.dalsegno) and not jumped:
-            jumped = True
+        if (m.dacapo or m.dalsegno) and not jumped and not gone_back:
+            jumped = gone_back = True
             i = segno if m.dalsegno else 0
             section_start, passes = i, 1
             continue
@@ -954,6 +971,16 @@ def _bar_ok(part: _Part, kp: _Part, mi: int) -> bool | None:
 RH_LOW = 60  # a tune whose middle note sits below middle C is raised by octaves to sit there or above (§2.6)
 
 
+def _tied_in_bar(m: _Measure, n: _Note) -> bool:
+    """Whether n's tie ends later in its own bar (a note of the same voice and pitch that stops a tie)."""
+    return any(o.tie_stop and o.voice == n.voice and o.pitch == n.pitch and not o.grace and o.pos > n.pos for o in m.notes)
+
+
+def _tied_from_bar(m: _Measure, n: _Note) -> bool:
+    """Whether n's tie starts earlier in its own bar."""
+    return any(o.tie_start and o.voice == n.voice and o.pitch == n.pitch and not o.grace and o.pos < n.pos for o in m.notes)
+
+
 def _melody_line(chosen: list[_Part], kp: _Part, order: list[int], starts: list[Fraction], tpb: int
                  ) -> tuple[list[Note], dict]:
     """The melody parts' notes in the bars that add up (_bar_ok), as right-hand notes, and the report: per part, the
@@ -969,13 +996,14 @@ def _melody_line(chosen: list[_Part], kp: _Part, order: list[int], starts: list[
         label = f"{p.name} ({p.id})" if not p.name or names.count(p.name) > 1 else p.name
         status = [_bar_ok(p, kp, mi) for mi in range(len(p.measures))]
         # A skipped bar's notes are left out, and ties into or out of it are broken, so a note tied across it
-        # doesn't hold through the bar the piano plays.
+        # doesn't hold through the bar the piano plays. A tie that starts and ends inside the bar stays.
         measures = []
         for mi, (m, s) in enumerate(zip(p.measures, status)):
             before = mi > 0 and not status[mi - 1]
             after = mi + 1 < len(status) and not status[mi + 1]
-            measures.append(replace(m, notes=[replace(n, tie_stop=n.tie_stop and not before,
-                                                      tie_start=n.tie_start and not after) for n in m.notes] if s else []))
+            measures.append(replace(m, notes=[replace(n, tie_stop=n.tie_stop and not (before and not _tied_from_bar(m, n)),
+                                                      tie_start=n.tie_start and not (after and not _tied_in_bar(m, n)))
+                                              for n in m.notes] if s else []))
         clean.append(replace(p, measures=measures))
         up = -12 * p.clef_octave if p.clef_octave < 0 else 0
         pitches = sorted(n.pitch + up for m in measures for n in m.notes)

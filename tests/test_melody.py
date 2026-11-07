@@ -131,6 +131,18 @@ def test_a_tie_across_a_skipped_bar_is_broken(tmp_path):
     assert right(sc) == [(0, C5, 4), (4, E5, 4), (8, C5, 4)]
 
 
+def test_a_tie_inside_a_bar_next_to_a_skipped_bar_stays(tmp_path):
+    # Bar 1 ties two C5 eighths to each other (A Whole New World's bar 57, before a bar that's skipped), and bar 3
+    # ties a D5 to itself just after one: both stay one note each.
+    start, stop = '<tie type="start"/>', '<tie type="stop"/>'
+    voice = [note("E", 5, 4) + note("C", 5, 2, 1, 1, start) + note("C", 5, 2, 1, 1, stop) + note("E", 5, 8),
+             note("D", 5, 8) + note("E", 5, 4),
+             note("D", 5, 2, 1, 1, start) + note("D", 5, 2, 1, 1, stop) + note("E", 5, 12)]
+    piano = [bar(rest(16), LH), bar(note("G", 4, 16), LH), bar(rest(16), LH)]
+    sc = song(tmp_path, [voice], piano)
+    assert right(sc) == [(0, E5, 1), (1, C5, 1), (2, E5, 2), (4, G4, 4), (8, D5, 1), (9, E5, 3)]
+
+
 def test_a_note_moved_to_the_left_hand_doesnt_overlap_its_key(tmp_path):
     # Under a C6 the right hand's D4 (four beats) goes to the left hand, which strikes D4 itself on beat 2: one key,
     # so the moved note stops there.
