@@ -213,6 +213,8 @@ def test_bar_numbers_lists():
 
 
 def test_another_engine_reads_each_page_and_its_pages_are_joined(tmp_path):
+    import sys
+
     Image = pytest.importorskip("PIL.Image")
     tool = _bench_tool()
 
