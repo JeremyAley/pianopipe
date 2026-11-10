@@ -150,7 +150,8 @@ def process_file(
 
     duration_s = round(seconds(max(n.end for n in notes)), 2)
     levels = make_levels(notes, song.ticks_per_beat, song.meta, merged.get("tune"))
-    gate = check(notes, levels, hand_source, duration_s, song.ticks_per_beat, seconds, policy or GatePolicy(), repaired)
+    gate = check(notes, levels, hand_source, duration_s, song.ticks_per_beat, seconds, policy or GatePolicy(), repaired,
+                 tune=merged["tune"][0] if merged.get("tune") else ())
     if policy is not None and not gate.ok:
         raise QualityError(gate.reasons)
 

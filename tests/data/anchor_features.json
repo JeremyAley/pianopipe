@@ -1,5 +1,5 @@
 {
- "mae": 0.531,
+ "mae": 0.527,
  "anchors": [
   {
    "id": "petzold-minuet-in-g-major-bwv-anh-114",
@@ -313,15 +313,15 @@
    "predicted": 3.9,
    "features": {
     "difficulty": 4.1,
-    "log_notes": 6.126869184114185,
+    "log_notes": 6.124683390894205,
     "pitch_range": 48.0,
-    "outside_key": 0.07423580786026196,
+    "outside_key": 0.07439824945295404,
     "rhythm_values": 2.0,
     "syncopation": 0.0,
     "independence": 0.5014925373134328,
     "polyphony": 0.0,
     "span": 0.0,
-    "shifts": 0.09010989010989011
+    "shifts": 0.0881057268722467
    }
   },
   {
@@ -397,7 +397,7 @@
     "independence": 0.6746031746031746,
     "polyphony": 0.0867237687366167,
     "span": 12.0,
-    "shifts": 0.34475374732334046
+    "shifts": 0.3436830835117773
    }
   },
   {
@@ -424,18 +424,18 @@
    "title": "Clair de lune",
    "file": "piano-midi-de/deb_clai.mid",
    "grade": 8.0,
-   "predicted": 8.3,
+   "predicted": 8.2,
    "features": {
     "difficulty": 6.5,
-    "log_notes": 7.307202314764738,
+    "log_notes": 7.306531398939505,
     "pitch_range": 70.0,
-    "outside_key": 0.08584842387659286,
+    "outside_key": 0.08590604026845639,
     "rhythm_values": 5.0,
-    "syncopation": 0.064,
-    "independence": 0.5967940813810111,
-    "polyphony": 0.4294060370009737,
+    "syncopation": 0.0641025641025641,
+    "independence": 0.6017262638717632,
+    "polyphony": 0.4228515625,
     "span": 12.0,
-    "shifts": 0.4148003894839338
+    "shifts": 0.4140625
    }
   },
   {
@@ -471,9 +471,9 @@
     "rhythm_values": 5.0,
     "syncopation": 0.003215434083601286,
     "independence": 0.44986449864498645,
-    "polyphony": 0.2725546058879392,
+    "polyphony": 0.2744539411206078,
     "span": 12.0,
-    "shifts": 0.31339031339031337
+    "shifts": 0.32668566001899335
    }
   },
   {
@@ -484,9 +484,9 @@
    "predicted": 5.5,
    "features": {
     "difficulty": 6.6,
-    "log_notes": 6.964135612418245,
+    "log_notes": 6.961296045910167,
     "pitch_range": 45.0,
-    "outside_key": 0.1068052930056711,
+    "outside_key": 0.10710900473933649,
     "rhythm_values": 5.0,
     "syncopation": 0.02773497688751926,
     "independence": 0.19437939110070257,

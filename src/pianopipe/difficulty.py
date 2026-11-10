@@ -13,8 +13,9 @@ Each level is a full song the app can switch to with the difficulty slider:
                     line over a left-hand tune
   3 Simplified      right hand keeps top two notes, left hand keeps root and top
   4 Full            the original arrangement
-Levels 1 and 2 are snapped to the eighth grid and level 3 to the sixteenth grid, except notes that would land on the
-same grid point as another note of their hand: those keep their own timing (see _quantize).
+Levels 1 and 2 are snapped to the eighth grid and level 3 to the sixteenth grid, except triplets, which stay where
+they are, and notes that would land on the same grid point as another note of their hand: those keep their own
+timing (see _quantize).
 The Nakamura and Yoshii statistical reduction can replace levels 1 to 3 later.
 difficulty_score() rates any level on a fixed 1-10 scale for the song browser.
 """
@@ -24,6 +25,7 @@ from __future__ import annotations
 import math
 from bisect import bisect_left, bisect_right
 from dataclasses import replace
+from fractions import Fraction as Q
 
 from . import features, notation
 from .hands import group_chords
@@ -36,24 +38,98 @@ LEVELS = {1: "Melody", 2: "Melody + bass", 3: "Simplified", 4: "Full"}
 MELODY_MIN_GAP = 1
 TRILL_NOTES = 4  # this many notes or more, alternating between two pitches a step apart a 32nd or less apart: a trill
 FIGURE_NOTES = 4  # this many notes or more a sixteenth or less apart can be a broken-chord figure (_figuration)
+LEGATO = 8  # a note that overlaps the hand's next by a 32nd (a quarter / LEGATO) or less is played legato, not held
 
 
-def _quantize(notes: list[Note], grid: int) -> list[Note]:
-    """Snap starts and ends to the grid, except where that would merge notes that start at different times in one
-    hand: those keep their own timing. (Snapping Für Elise's sixteenth-note E-D#-E onto an eighth grid turned the
-    melody into two-note chords, 2026-10-26.)"""
-    snapped = {id(n): round(n.start / grid) * grid for n in notes}
-    starts_at: dict[tuple, set] = {}
-    for n in notes:
-        starts_at.setdefault((n.hand, snapped[id(n)]), set()).add(n.start)
+def _off(tick: int, unit: Q) -> Q:
+    """How far `tick` is from the grid of `unit` ticks."""
+    return abs(tick - round(tick / unit) * unit)
+
+
+def _snap(tick: int, unit: Q) -> int:
+    return round(round(tick / unit) * unit)
+
+
+def is_triplet(tick: int, tpb: int) -> bool:
+    """Whether `tick` is a triplet's place in its beat: on the 16th-triplet grid and off the 32nd grid (to the tick,
+    for a resolution three doesn't divide). The beat and the half beat are on both."""
+    return _off(tick, Q(tpb, 6)) < 1 <= _off(tick, Q(tpb, 8))
+
+
+def triplet_quarters(starts, tpb: int) -> set[int]:
+    """The quarters (counted from tick 0) in which `starts` (one hand's note starts) are triplets: two or more of
+    them are at a triplet's place (is_triplet), and fewer at a place only the 32nd grid has. Counted rather than
+    summed like notation.quantise's fit: Moonlight's melody has a sixteenth after the third triplet (0, 1/3, 2/3, 3/4
+    of a beat), which is as far from one grid as from the other and is a triplet beat all the same."""
+    triplet: dict[int, int] = {}
+    duple: dict[int, int] = {}
+    for s in set(starts):
+        if is_triplet(s, tpb):
+            triplet[s // tpb] = triplet.get(s // tpb, 0) + 1
+        elif _off(s, Q(tpb, 8)) < 1 <= _off(s, Q(tpb, 6)):
+            duple[s // tpb] = duple.get(s // tpb, 0) + 1
+    return {q for q, k in triplet.items() if k >= 2 and k > duple.get(q, 0)}
+
+
+def level_grid(level: int, tpb: int) -> Q:
+    """The grid step in ticks that a reduced level's notes snap to: an eighth in levels 1 and 2, a sixteenth in
+    level 3. (Triplets stay on the 16th-triplet grid in every level: _quantize.)"""
+    return Q(tpb, 2 if level in (1, 2) else 4)
+
+
+def on_level_grid(tick: int, level: int, tpb: int) -> bool:
+    """Whether a note of the level can start at `tick`: on the level's grid (level_grid) or at a triplet's place."""
+    return _off(tick, level_grid(level, tpb)) < 1 or is_triplet(tick, tpb)
+
+
+def _quantize(notes: list[Note], level: int, tpb: int) -> list[Note]:
+    """Snap starts and ends to the level's grid (level_grid), triplets apart: a start or end at a triplet's place in
+    its beat (is_triplet) stays there. One sixteenth grid for all of level 3 turned Moonlight's triplets, at 0, 1/3
+    and 2/3 of the beat, into a sixteenth, an eighth and a sixteenth. A start or end on neither the 32nd nor the
+    16th-triplet grid (a shortened note's end, mostly) goes to the 16th-triplet grid in a quarter where the hand's
+    notes are triplets (triplet_quarters), and to the level's grid elsewhere.
+    Notes that would land on the same grid point as a note of their hand that starts elsewhere keep their own timing.
+    (Snapping Für Elise's sixteenth-note E-D#-E onto an eighth grid turned the melody into two-note chords.)
+    A note is at least one grid step long, unless it ends at a triplet's place, but never runs into the hand's next
+    note unless it did in the source, by
+    more than a 32nd (LEGATO; less is legato playing, and ends at that note): the app scores how long a note is held,
+    so a first triplet stretched to an eighth asked for a hold that isn't in the music."""
+    grid, fine, triplet = level_grid(level, tpb), Q(tpb, 8), Q(tpb, 6)
+    w = tpb // LEGATO
     out = []
-    for n in notes:
-        start = snapped[id(n)]
-        if len(starts_at[(n.hand, start)]) > 1:
-            out.append(n)  # would collide with a note that starts elsewhere: keep the original rhythm
-            continue
-        end = max(start + grid, round(n.end / grid) * grid)
-        out.append(replace(n, start=start, end=end))
+    for hand in sorted({n.hand for n in notes}, key=str):
+        mine = sorted((n for n in notes if n.hand == hand), key=lambda n: (n.start, n.pitch))
+        triplets = triplet_quarters([n.start for n in mine], tpb)
+
+        def unit(tick: int) -> Q:
+            return triplet if tick // tpb in triplets else grid
+
+        def place(tick: int) -> int:
+            if is_triplet(tick, tpb):
+                return tick
+            return _snap(tick, grid if _off(tick, fine) < 1 else unit(tick))
+
+        snapped = [place(n.start) for n in mine]
+        starts_at: dict[int, set] = {}
+        for n, s in zip(mine, snapped):
+            starts_at.setdefault(s, set()).add(n.start)
+        # Where each note starts in the level: its grid point, or its own start when it shares that point with a
+        # note that starts elsewhere.
+        shared = [len(starts_at[s]) > 1 for s in snapped]
+        placed = [n.start if keep else s for n, s, keep in zip(mine, snapped, shared)]
+        firsts = [n.start for n in mine]
+        for n, start, keep in zip(mine, placed, shared):
+            end = n.end if keep else place(n.end)
+            if not keep and (end <= start or not is_triplet(end, tpb)):
+                # At least a grid step long. (An end at a triplet's place is the note's own: the first of a beat's
+                # triplets, alone in level 2's bass, stays a triplet eighth.)
+                end = max(start + round(triplet if is_triplet(start, tpb) else unit(n.start)), end)
+            # The hand's next note that the source's note didn't run into. (It can have moved back onto a note that
+            # kept its own timing: a sixteenth after the beat, snapped to the beat.)
+            nxt = bisect_left(firsts, max(n.start + 1, n.end - w))
+            if nxt < len(mine):
+                end = min(end, placed[nxt])
+            out.append(n if (start, end) == (n.start, n.end) else replace(n, start=start, end=end))
     return _dedupe(out)
 
 
@@ -109,12 +185,20 @@ def _trills(line: list[Note], tpb: int) -> list[Note]:
             while j < len(line) and line[j].start - line[j - 1].start <= fast and line[j].pitch == pair[(j - i) % 2]:
                 j += 1
         if j - i >= TRILL_NOTES:
-            out.append(replace(line[i], end=max(n.end for n in line[i:j])))
+            out.append(replace(line[i], end=_until(max(n.end for n in line[i:j]), line[i], line[j:j + 1])))
             i = j
         else:
             out.append(line[i])
             i += 1
     return out
+
+
+def _until(end: int, note: Note, after: list[Note]) -> int:
+    """`end`, the end of the notes that `note` stands for (a trill, a figure), but not past the line's next note
+    (`after`, if there is one) unless `note` itself is held past it."""
+    if not after or note.end > after[0].start:
+        return end
+    return min(end, after[0].start)
 
 
 def _line(notes: list[Note], hand: str, top: bool, w: int) -> tuple[list[Note], list[list[Note]]]:
@@ -194,7 +278,7 @@ def _moves_by_step(groups: list[list[Note]], g: int) -> bool:
 def _figuration(line: list[Note], notes: list[Note], tpb: int, meta, top: bool) -> list[Note]:
     """In runs of FIGURE_NOTES or more notes a sixteenth or less apart, each beat (the time signature's,
     features.beat_grid) that is broken-chord figuration (_figure_beat) becomes one note: the beat's top note (bottom,
-    for a bass line), from the beat if the piece has a note there, to the end of the beat's last note. The Bach C
+    for a bass line), from the beat if the piece has a note there, to the end of the beat's last note or to the line's next note. The Bach C
     major prelude's level 1 was its right hand's sixteenths, unsimplified and half snapped to eighths; now it's the
     top of each beat, C5 E5 C5 E5 | D5 F5 D5 F5. Triplet eighths (Moonlight) aren't fast enough to count."""
     w = max(1, tpb // 32)
@@ -234,7 +318,8 @@ def _figuration(line: list[Note], notes: list[Note], tpb: int, meta, top: bool) 
                 near = bisect_left(starts, beat - w)
                 on_beat = near < len(starts) and starts[near] <= beat + w and (not out or out[-1].end <= beat + w)
                 start = beat if on_beat else group[0].start
-                out.append(replace(pick, start=start, end=max(start + 1, max(n.end for n in group))))
+                end = _until(max(n.end for n in group), pick, run[last + 1:last + 2] or line[i:i + 1])
+                out.append(replace(pick, start=start, end=max(start + 1, end)))
                 out.extend(tail)
     return out
 
@@ -510,7 +595,7 @@ def make_level(notes: list[Note], level: int, ticks_per_beat: int, meta=(), tune
             line = sorted(_held_figure(kept, notes, tpb, meta, spans) + [replace(n, hand="R") for n in tune[0]],
                           key=lambda n: (n.start, n.pitch))
         if level == 1:
-            return _quantize(line, tpb // 2)
+            return _quantize(line, level, tpb)
         # The other hand's outer line, one note a beat: the bass under a right-hand tune, the right hand's top line
         # over a left-hand one.
         other = outer_notes(notes, "L", tpb, gap, meta)
@@ -518,10 +603,10 @@ def make_level(notes: list[Note], level: int, ticks_per_beat: int, meta=(), tune
             over = outer_notes(notes, "R", tpb, gap, meta)
             other = [n for n in other if sung(n.start) or bar_of(n.start) not in left_bars] + \
                     [n for n in over if not sung(n.start) and bar_of(n.start) in left_bars]
-        return _quantize(line + one_per_beat(other, meta, tpb), tpb // 2)
+        return _quantize(line + one_per_beat(other, meta, tpb), level, tpb)
     rh = _per_chord(notes, "R", lambda c: c[-2:], tpb)
     lh = _per_chord(notes, "L", lambda c: c[:1] + (c[-1:] if len(c) > 1 else []), tpb)
-    return _quantize(rh + lh, tpb // 4)
+    return _quantize(rh + lh, level, tpb)
 
 
 def make_levels(notes: list[Note], ticks_per_beat: int, meta=(), tune=None) -> dict[int, list[Note]]:

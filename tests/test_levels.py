@@ -256,3 +256,122 @@ def test_level_two_strikes_a_key_once():
     bass = [_l(0, TPB, 45), _l(TPB, TPB, 57), _l(2 * TPB, 2 * TPB, 52)]
     out = make_level(tune + bass, 2, TPB)
     assert [(n.start, n.end, n.hand) for n in out if n.pitch == 57] == [(TPB, 3 * TPB, "R")]
+
+
+T = TPB // 3  # a triplet eighth
+
+
+def _rhythm(notes, hand="R"):
+    return [(n.start, n.end) for n in sorted(notes, key=lambda n: n.start) if n.hand == hand]
+
+
+def _runs_into_next(notes):
+    """Notes that are still held when their hand's next note starts."""
+    out = []
+    for hand in ("R", "L"):
+        mine = sorted((n for n in notes if n.hand == hand), key=lambda n: n.start)
+        out += [a for a, b in zip(mine, mine[1:]) if b.start > a.start and a.end > b.start]
+    return out
+
+
+def test_triplets_keep_their_rhythm_in_every_level():
+    """Triplet eighths at 0, 1/3 and 2/3 of the beat stay there and keep their length. Level 3's sixteenth grid made
+    them a sixteenth, an eighth and a sixteenth (0, 1/4, 3/4); levels 1 and 2 stretched each beat's first note to an
+    eighth, over the second."""
+    rh = [_r(b * TPB + k * T, T, p) for b in range(4) for k, p in enumerate((68, 73, 76))]
+    lh = [_l(b * TPB, TPB, 49) for b in range(4)]
+    written = [(b * TPB + k * T, b * TPB + (k + 1) * T) for b in range(4) for k in range(3)]
+    for level in (1, 2, 3):
+        out = make_level(rh + lh, level, TPB, _time_sig(4, 4))
+        assert _rhythm(out) == written, f"level {level}"
+        assert not _runs_into_next(out), f"level {level}"
+    assert _rhythm(make_level(rh + lh, 2, TPB, _time_sig(4, 4)), "L") == [(b * TPB, (b + 1) * TPB) for b in range(4)]
+
+
+def test_triplets_in_the_left_hand_under_a_tune():
+    """A nocturne's accompaniment: level 2's bass is the first of each beat's triplets, no longer than it was written
+    for, and level 3 keeps all three in place under the right hand's eighths (two against three)."""
+    rh = [_r(k * TPB // 2, TPB // 2, 72 + k % 5) for k in range(8)]
+    lh = [_l(b * TPB + k * T, T, p) for b in range(4) for k, p in enumerate((44, 51, 56))]
+    two = make_level(rh + lh, 2, TPB, _time_sig(4, 4))
+    assert _rhythm(two, "L") == [(b * TPB, b * TPB + T) for b in range(4)]  # still a triplet eighth, not an eighth
+    assert not _runs_into_next(two)
+    three = make_level(rh + lh, 3, TPB, _time_sig(4, 4))
+    assert _rhythm(three, "L") == [(b * TPB + k * T, b * TPB + (k + 1) * T) for b in range(4) for k in range(3)]
+    assert _rhythm(three, "R") == [(k * TPB // 2, (k + 1) * TPB // 2) for k in range(8)]
+
+
+def test_sixteenth_after_the_third_triplet_stays():
+    """Moonlight's melody: a dotted eighth and a sixteenth over the hand's triplets, so a beat's notes start at 0, 1/3,
+    2/3 and 3/4. Level 3 keeps all four; no grid moves the sixteenth onto the third triplet or the triplets onto
+    sixteenths."""
+    notes = []
+    for b in range(4):
+        t = b * TPB
+        notes += [_r(t, 3 * TPB // 4, 80), _r(t + 3 * TPB // 4, TPB // 4, 80)]
+        notes += [_r(t + k * T, T, p) for k, p in enumerate((68, 73, 76))]
+    out = make_level(notes, 3, TPB, _time_sig(4, 4))
+    assert sorted({n.start % TPB for n in out}) == [0, T, 2 * T, 3 * TPB // 4]
+    assert {n.start for n in out} == {n.start for n in notes}
+
+
+def test_plain_eighth_among_sixteenth_triplets_stays():
+    """Debussy's second Arabesque: three sixteenth triplets and an eighth (0, 1/6, 2/6, 1/2 of the beat). The eighth is
+    on the eighth grid already and stays; so do the triplets."""
+    s = TPB // 6
+    notes = [_r(b * TPB + at, dur, p) for b in range(4) for at, dur, p in ((0, s, 81), (s, s, 83), (2 * s, s, 81), (3 * s, 3 * s, 76))]
+    for level in (1, 2, 3):
+        assert [n.start for n in make_level(notes, level, TPB, _time_sig(4, 4))] == [n.start for n in notes], f"level {level}"
+
+
+def test_lone_triplet_note_stays():
+    """A quarter and an eighth under a triplet bracket (0 and 2/3 of the beat, a swung pair): the second note isn't
+    pulled to the half beat."""
+    notes = [_r(b * TPB + at, dur, 72 + b) for b in range(4) for at, dur in ((0, 2 * T), (2 * T, T))]
+    for level in (1, 2, 3):
+        assert _rhythm(make_level(notes, level, TPB)) == [(n.start, n.end) for n in notes], f"level {level}"
+
+
+def test_shortened_triplets_end_on_the_triplet_grid():
+    """A file that plays its notes a little short (piano-midi.de): a triplet's end goes to the triplet grid, not to the
+    eighth before it, which left the note a sixteenth triplet long."""
+    notes = [_r(b * TPB + k * T, T - 10, p) for b in range(2) for k, p in enumerate((68, 73, 76))]
+    for level in (1, 2, 3):
+        assert _rhythm(make_level(notes, level, TPB)) == [(k * T, (k + 1) * T) for k in range(6)], f"level {level}"
+
+
+def test_no_note_is_stretched_over_the_next():
+    """Sixteenths that keep their own timing on level 1's eighth grid (Für Elise) aren't run into by the notes round
+    them: a note that snaps to the grid ends where the hand's next note starts, at the latest."""
+    notes = [_r(i * S, S, p) for i, p in enumerate([76, 75, 76, 75, 76, 71, 74, 72, 69])]
+    for level in (1, 2, 3):
+        out = make_level(notes, level, TPB)
+        assert [n.start for n in out] == [n.start for n in notes]
+        assert not _runs_into_next(out), f"level {level}"
+
+
+def test_note_snapped_back_doesnt_cut_into_the_one_before():
+    """Maple Leaf Rag: a sixteenth before the beat and the note on the beat share a grid point and keep their timing;
+    the next note, a sixteenth after the following beat, snaps back to that beat, and the note before it ends there."""
+    notes = [_r(3 * S, S, 73), _r(4 * S, 5 * S, 77), _r(9 * S, 2 * S, 72)]
+    out = make_level(notes, 1, TPB)
+    assert _rhythm(out) == [(3 * S, 4 * S), (4 * S, 8 * S), (8 * S, 12 * S)]
+
+
+def test_legato_overlap_ends_at_the_next_note_and_a_real_hold_stays():
+    legato = [_r(k * TPB, TPB + TPB // 16, 72 + k) for k in range(4)]  # each a 64th into the next
+    assert _rhythm(make_level(legato, 1, TPB)) == [(k * TPB, (k + 1) * TPB) for k in range(4)]
+    held = [_r(0, 4 * TPB, 60)] + [_r(k * TPB, TPB, 72 + k) for k in range(1, 4)]  # C4 held under a tune above it
+    out = make_level(held, 1, TPB)
+    assert (0, 4 * TPB) in _rhythm(out)
+
+
+def test_trill_and_figure_stop_at_the_next_note():
+    """A trill's held note and a figure's one note a beat end where the line's next note starts, also when the last
+    note they stand for rings on under it."""
+    trill = [_r(i * TPB // 8, TPB // 8 + (TPB // 2 if i == 7 else 0), 74 if i % 2 == 0 else 76) for i in range(8)]
+    out = make_level(trill + [_r(TPB, TPB, 79)], 1, TPB)
+    assert _rhythm(out) == [(0, TPB), (TPB, 2 * TPB)]
+    figure = [_r(k * S, S + (TPB if k == 3 else 0), p) for k, p in enumerate([60, 67, 64, 67])] + [_r(TPB, TPB, 72)]
+    out = make_level(figure, 1, TPB, _time_sig(4, 4))
+    assert _rhythm(out) == [(0, TPB), (TPB, 2 * TPB)]
